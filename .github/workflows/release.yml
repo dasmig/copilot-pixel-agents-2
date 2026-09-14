@@ -59,9 +59,10 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh release create "$GITHUB_REF_NAME" -- *.vsix \
+          gh release create "$GITHUB_REF_NAME" \
             --title "$GITHUB_REF_NAME" \
-            --generate-notes
+            --generate-notes \
+            -- *.vsix
 
       # Requires a VSCE_PAT repo secret (Azure DevOps PAT, Marketplace → Manage scope,
       # see .github/PUBLISHING.md). If it isn't configured, the GitHub Release above
