@@ -417,6 +417,44 @@ test('generated Unix hook executes with mock loopback receiver in a cleaned temp
   assert.deepEqual((await readdir(home)).sort(), ['bin', 'hook.sh']);
 });
 
+// The test above proves the generated script escapes/transports payloads correctly
+// against a bare mock receiver. This one closes the remaining link of the real chain
+// (generated script → real subprocess → real HTTP handler → real AgentStore) that no
+// other test exercises together: everything upstream of the handler is real here too.
+test('generated Unix hook drives the real HTTP handler and AgentStore end to end', { skip: !process.env.PIXEL_TEST_PYTHON }, async (t) => {
+  const home = await mkdtemp(join(tmpdir(), 'pixel-backend-e2e-'));
+  t.after(() => rm(home, { recursive: true, force: true }));
+  const store = storeFor(t);
+  const port = await listen(t, createHookRequestHandler(store));
+  const bin = join(home, 'bin'); await mkdir(bin);
+  await symlink(process.env.PIXEL_TEST_PYTHON, join(bin, 'python3'));
+  const script = join(home, 'hook.sh');
+  await writeFile(script, buildHookScript(port, 'darwin'), { mode: 0o755 });
+  const env = { PATH: `${bin}:/usr/bin:/bin`, HOME: home };
+
+  const start = await execute('/bin/sh', [script], JSON.stringify({
+    hookEventName: 'PreToolUse', sessionId: 'e2e-session', toolCallId: 'call-1', toolName: 'edit_file',
+  }), env);
+  assert.equal(start.code, 0);
+  assert.deepEqual(JSON.parse(start.stdout), { permissionDecision: 'allow' });
+  let agent = store.get('e2e-session');
+  assert.equal(agent.toolHistory[0].toolName, 'edit_file');
+  assert.equal(agent.toolHistory[0].outcome, 'running');
+  assert.equal(agent.activeTools.get('call-1').name, 'edit_file');
+
+  const done = await execute('/bin/sh', [script], JSON.stringify({
+    hookEventName: 'PostToolUse', sessionId: 'e2e-session', toolCallId: 'call-1',
+  }), env);
+  assert.equal(done.code, 0);
+  agent = store.get('e2e-session');
+  assert.equal(agent.toolHistory[0].outcome, 'completed');
+  assert.equal(agent.activeTools.size, 0);
+
+  const stop = await execute('/bin/sh', [script], JSON.stringify({ hookEventName: 'Stop', sessionId: 'e2e-session' }), env);
+  assert.equal(stop.code, 0);
+  assert.equal(store.get('e2e-session').isWaiting, false);
+});
+
 test('generated PowerShell runtime behavior (optional locally installed runtime)', { skip: !process.env.PIXEL_TEST_PWSH }, async (t) => {
   const home = await mkdtemp(join(tmpdir(), 'pixel-backend-ps-'));
   t.after(() => rm(home, { recursive: true, force: true }));

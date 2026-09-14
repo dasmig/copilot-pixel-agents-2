@@ -30,6 +30,15 @@ jobs:
       - name: Typecheck
         run: npm run typecheck
 
+      # Without these, tests/backend.test.mjs's real end-to-end hook tests (generated
+      # script -> real subprocess -> real HTTP handler -> AgentStore) silently skip.
+      # ubuntu-latest ships both runtimes; only set the var when one is actually found,
+      # so a runner image change degrades to "skipped" instead of failing the build.
+      - name: Resolve optional hook script runtimes for end-to-end tests
+        run: |
+          if command -v python3 >/dev/null; then echo "PIXEL_TEST_PYTHON=$(command -v python3)" >> "$GITHUB_ENV"; fi
+          if command -v pwsh >/dev/null; then echo "PIXEL_TEST_PWSH=$(command -v pwsh)" >> "$GITHUB_ENV"; fi
+
       - name: Test
         run: npm test
 

@@ -41,6 +41,11 @@ jobs:
       - name: Typecheck
         run: npm run typecheck
 
+      - name: Resolve optional hook script runtimes for end-to-end tests
+        run: |
+          if command -v python3 >/dev/null; then echo "PIXEL_TEST_PYTHON=$(command -v python3)" >> "$GITHUB_ENV"; fi
+          if command -v pwsh >/dev/null; then echo "PIXEL_TEST_PWSH=$(command -v pwsh)" >> "$GITHUB_ENV"; fi
+
       - name: Test
         run: npm test
 
