@@ -55,14 +55,21 @@ jobs:
       - name: Package extension (.vsix)
         run: npx @vscode/vsce package --no-dependencies
 
-      - name: Create GitHub Release
+      # Idempotent: a rerun (e.g. after adding VSCE_PAT following a run that published
+      # the release but skipped the Marketplace step) must not fail just because the
+      # release from the previous attempt already exists.
+      - name: Create or update GitHub Release
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh release create "$GITHUB_REF_NAME" \
-            --title "$GITHUB_REF_NAME" \
-            --generate-notes \
-            -- *.vsix
+          if gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
+            gh release upload "$GITHUB_REF_NAME" --clobber -- *.vsix
+          else
+            gh release create "$GITHUB_REF_NAME" \
+              --title "$GITHUB_REF_NAME" \
+              --generate-notes \
+              -- *.vsix
+          fi
 
       # Requires a VSCE_PAT repo secret (Azure DevOps PAT, Marketplace → Manage scope,
       # see .github/PUBLISHING.md). If it isn't configured, the GitHub Release above
