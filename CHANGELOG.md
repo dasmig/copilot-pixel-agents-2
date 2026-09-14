@@ -2,7 +2,46 @@
 
 > **Note on 0.4.x history:** versions 0.4.5–0.4.9 were packaged and distributed as `.vsix` files but their `package.json` version bumps were never committed to this repository, so their exact contents cannot be reconstructed from git history. The entry below for 0.4.10 has been reconstructed from the corresponding commits. Going forward, every published version is tagged and built by CI (see `.github/workflows/ci.yml`) so this gap cannot recur.
 
-## [0.6.1] — 2026-09-10 (current)
+## [0.7.0] — 2026-09-14 (current)
+
+Project tooling and process, not runtime behavior — no user-facing changes to the
+extension itself.
+
+### Added
+- CI (`.github/workflows/ci.yml`): every push/PR installs both workspaces, typechecks,
+  runs the full test suite — including real execution of the generated Unix and
+  PowerShell hook scripts against a real HTTP handler and `AgentStore`, previously
+  always skipped for lack of a runtime — audits production dependencies, builds and
+  packages a `.vsix`, uploaded as a build artifact.
+- Release pipeline (`.github/workflows/release.yml`): pushing a `vX.Y.Z` tag verifies
+  it matches `package.json`, re-runs the full quality gate, packages the `.vsix`,
+  creates a GitHub Release with it attached, and publishes to the VS Code Marketplace
+  once the `VSCE_PAT` secret is configured (see `.github/PUBLISHING.md`).
+- Dependabot (`.github/dependabot.yml`) for both npm workspaces and GitHub Actions,
+  weekly.
+- `SECURITY.md`, `CONTRIBUTING.md`, issue templates (bug report / feature request), a
+  PR template and `CODEOWNERS`.
+- Regression tests for `engine.ts`'s idle-wander collision avoidance (the exact class
+  of bug fixed in 0.4.11/0.4.12, previously with zero dedicated coverage), leisure-spot
+  assignment, pet furniture-zone avoidance, `onToolDone`/`syncHistory`/
+  `removeCharacter`; and for `sprites.ts`'s walking-sprite drawing, floor/furniture
+  tiles and the sprite loader.
+- Compatibility matrix and expanded testing documentation in the README.
+
+### Changed
+- `webview-ui`'s typecheck now covers every file under `src/`, not only
+  `main.ts`/`isometric.ts`.
+- Retroactively tagged `v0.1.0`, `v0.2.0`, `v0.3.0`, `v0.4.10` and `v0.4.11` on the
+  commits that actually carry those versions; the untraceable 0.4.5–0.4.9/0.4.12 gap is
+  documented above instead of left silent.
+- `webview-ui/package.json`'s version now tracks the root package's.
+
+### Fixed
+- 8 dependency vulnerabilities in the root project (6 high, 2 moderate), via
+  `npm audit fix` — including a major, dev-only `esbuild` bump, verified not to affect
+  the build output.
+
+## [0.6.1] — 2026-09-10
 
 ### Documentation
 - Replaced the legacy animated GIF with a screenshot of the v0.6.0 isometric office, seated agents and task inspector, using demonstration data.
