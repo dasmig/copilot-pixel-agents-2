@@ -12,9 +12,9 @@ jobs:
   release:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
           node-version: 20.x
           cache: npm
@@ -54,7 +54,7 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh release create "$GITHUB_REF_NAME" *.vsix \
+          gh release create "$GITHUB_REF_NAME" -- *.vsix \
             --title "$GITHUB_REF_NAME" \
             --generate-notes
 
@@ -62,8 +62,9 @@ jobs:
       # see .github/PUBLISHING.md). If it isn't configured, the GitHub Release above
       # still carries the .vsix and publishing falls back to the manual steps in
       # PUBLISHING.md — this step just automates that final hand-off when possible.
+      # `secrets` isn't a valid context in `if:`, so the presence check goes through `env`.
       - name: Publish to VS Code Marketplace
-        if: ${{ secrets.VSCE_PAT != '' }}
+        if: ${{ env.VSCE_PAT != '' }}
         env:
           VSCE_PAT: ${{ secrets.VSCE_PAT }}
         run: npx @vscode/vsce publish --no-dependencies -p "$VSCE_PAT"
