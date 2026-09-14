@@ -1,0 +1,69 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*.*.*'
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20.x
+          cache: npm
+          cache-dependency-path: |
+            package-lock.json
+            webview-ui/package-lock.json
+
+      - name: Verify tag matches package.json version
+        run: |
+          TAG_VERSION="${GITHUB_REF_NAME#v}"
+          PKG_VERSION=$(node -p "require('./package.json').version")
+          if [ "$TAG_VERSION" != "$PKG_VERSION" ]; then
+            echo "::error::Tag $GITHUB_REF_NAME does not match package.json version $PKG_VERSION — refusing to release a mismatched build."
+            exit 1
+          fi
+
+      - name: Install root dependencies
+        run: npm ci
+
+      - name: Install webview dependencies
+        run: npm ci
+        working-directory: webview-ui
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Test
+        run: npm test
+
+      - name: Build
+        run: npm run build:webview && npm run build
+
+      - name: Package extension (.vsix)
+        run: npx @vscode/vsce package --no-dependencies
+
+      - name: Create GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" *.vsix \
+            --title "$GITHUB_REF_NAME" \
+            --generate-notes
+
+      # Requires a VSCE_PAT repo secret (Azure DevOps PAT, Marketplace → Manage scope,
+      # see .github/PUBLISHING.md). If it isn't configured, the GitHub Release above
+      # still carries the .vsix and publishing falls back to the manual steps in
+      # PUBLISHING.md — this step just automates that final hand-off when possible.
+      - name: Publish to VS Code Marketplace
+        if: ${{ secrets.VSCE_PAT != '' }}
+        env:
+          VSCE_PAT: ${{ secrets.VSCE_PAT }}
+        run: npx @vscode/vsce publish --no-dependencies -p "$VSCE_PAT"

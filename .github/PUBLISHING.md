@@ -1,12 +1,34 @@
 # Publicando no VS Code Marketplace
 
+## Fluxo automatizado (recomendado)
+
+Desde o Sprint 2, `.github/workflows/release.yml` cuida do empacotamento e da release
+a cada push de tag `vX.Y.Z`:
+
+1. Atualize `version` em `package.json` e a seção correspondente do `CHANGELOG.md` num commit em `master`.
+2. Crie e envie a tag:
+   ```bash
+   git tag -a v0.7.0 -m "v0.7.0"
+   git push origin v0.7.0
+   ```
+3. O workflow valida que a tag bate com `package.json`, roda typecheck + testes, builda,
+   empacota o `.vsix` e cria uma GitHub Release com o arquivo anexado.
+4. Se o secret `VSCE_PAT` estiver configurado no repositório (Settings → Secrets and
+   variables → Actions), o mesmo workflow publica automaticamente no Marketplace. Sem o
+   secret, a Release ainda é criada com o `.vsix` pronto — só a publicação no Marketplace
+   fica manual (passo 5 abaixo).
+
+O checklist e os passos manuais continuam válidos como fallback (secret ausente, teste
+local do `.vsix`, ou republicação de uma versão sem gerar uma tag nova).
+
 ## Pré-requisitos
 
 1. Conta em https://marketplace.visualstudio.com/manage
 2. Azure DevOps Personal Access Token (PAT) com escopo **Marketplace → Manage**
 3. Publisher registrado com o mesmo `publisher` do `package.json` (`cl-oliveira`)
+4. Para o fluxo automatizado: o PAT salvo como secret `VSCE_PAT` no repositório GitHub
 
-## Passo a passo
+## Passo a passo manual
 
 ### 1. Criar o publisher (se ainda não existir)
 

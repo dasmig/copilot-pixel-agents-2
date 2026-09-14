@@ -1,0 +1,77 @@
+name: Bug report
+description: Something in Copilot Pixel Agents isn't working as expected
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time to report a bug! If this is a security issue, please
+        follow [SECURITY.md](../../SECURITY.md) instead of filing a public issue.
+
+  - type: input
+    id: version
+    attributes:
+      label: Extension version
+      description: Check the Extensions view in VS Code, or `package.json` if built from source.
+      placeholder: e.g. 0.6.1
+    validations:
+      required: true
+
+  - type: dropdown
+    id: os
+    attributes:
+      label: Operating system
+      options:
+        - macOS
+        - Windows
+        - Linux
+        - Other
+    validations:
+      required: true
+
+  - type: dropdown
+    id: agent-source
+    attributes:
+      label: Which agent are you hooking?
+      options:
+        - GitHub Copilot
+        - Claude Code
+        - Both / not sure
+    validations:
+      required: true
+
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened?
+      description: What did you expect, and what did you see instead?
+    validations:
+      required: true
+
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1. Install hooks via ...
+        2. Run a tool call in ...
+        3. Observe ...
+    validations:
+      required: true
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: Output channel logs
+      description: >
+        View → Output → "Copilot Pixel Agents". Only fixed event metadata is logged
+        (event type, byte count) — never raw payloads — so this is safe to paste.
+      render: text
+
+  - type: checkboxes
+    id: reinstalled-hooks
+    attributes:
+      label: Checklist
+      options:
+        - label: I reinstalled hooks after upgrading the extension (Command Palette → "Install Copilot Hooks")
+        - label: I checked the Troubleshooting section in the README
