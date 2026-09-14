@@ -71,6 +71,17 @@ O servidor escuta somente em `127.0.0.1`, inicialmente na porta `7823`. Se ela e
 - **macOS/Linux:** `sh` e `python3` no PATH. O novo script usa a biblioteca padrão do Python para JSON e HTTP; os scripts da versão publicada 0.5.0 também dependem de `curl`.
 - **Windows:** PowerShell disponível como `powershell`; o novo script usa `ConvertFrom-Json`/`ConvertTo-Json` e HTTP do .NET, com timeout e sem redirecionamentos/proxies.
 
+**Matriz de compatibilidade**
+
+| Componente | Suportado | Observação |
+|---|---|---|
+| VS Code Desktop | `^1.70.0` (declarado em `package.json`) | Prefira uma versão atualizada; a integração de hooks do Copilot evolui com o VS Code. |
+| GitHub Copilot | Modo agente com `chat.hookFilesLocations` | Recurso mudou de formato entre versões — ver histórico de correções no [CHANGELOG](CHANGELOG.md). |
+| Claude Code | Hooks via `~/.claude/settings.json` | Compatibilidade universal desde a v0.4.0. |
+| Node.js (só para build local) | 20.x | Mesma versão usada em CI/Release (`.github/workflows/ci.yml`). Não é necessário para instalar pelo Marketplace. |
+| macOS/Linux runtime do hook | `sh` + `python3` no PATH | Exercitado de ponta a ponta em CI a cada push (script real → HTTP real → `AgentStore` real). |
+| Windows runtime do hook | `powershell`/`pwsh` no PATH | O `.ps1` gerado é exercitado em CI via `pwsh`, quando disponível no runner. |
+
 Não é necessário clonar o repositório nem instalar Node.js para usar a extensão pelo Marketplace.
 
 1. Instale a extensão pelo [VS Code Marketplace](https://marketplace.visualstudio.com/items?itemName=cl-oliveira.copilot-pixel-agents)
@@ -286,9 +297,9 @@ Execute os comandos a partir da raiz do repositório:
 | `npm --prefix webview-ui run typecheck` | Verifica os tipos da webview |
 | `npx tsc --noEmit` | Verifica os tipos da extensão |
 
-Os testes cobrem projeção, enquadramento, zoom, arraste, seleção por profundidade, transições de postura, ocupação dos assentos, crescimento da sala, resize, renderização sem sprites, navegação do inspetor, conteúdo hostil, correlação de eventos, limite HTTP, mascaramento e limpeza ao desativar a captura. Eles empacotam TypeScript em memória usando o esbuild da raiz; instale as dependências tanto da raiz quanto da webview.
+Os testes cobrem projeção, enquadramento, zoom, arraste, seleção por profundidade, transições de postura, ocupação dos assentos, crescimento da sala, resize, renderização sem sprites, navegação do inspetor, conteúdo hostil, correlação de eventos, limite HTTP, mascaramento e limpeza ao desativar a captura, colisão entre agentes ociosos, atribuição de vagas de lazer, desvio de mobília pelo mascote e o histórico de ferramentas (`onToolDone`/`syncHistory`/liberação de assento ao remover um agente). Eles empacotam TypeScript em memória usando o esbuild da raiz; instale as dependências tanto da raiz quanto da webview.
 
-Os testes de execução real dos scripts são opcionais: informe o caminho do Python configurado em `PIXEL_TEST_PYTHON` ou do PowerShell em `PIXEL_TEST_PWSH` antes de executar `npm test`. Sem esses runtimes, somente esses casos são ignorados. Eles usam um HOME temporário e um servidor de teste, sem alterar seus hooks instalados.
+Os testes de execução real dos scripts são opcionais localmente: informe o caminho do Python configurado em `PIXEL_TEST_PYTHON` ou do PowerShell em `PIXEL_TEST_PWSH` antes de executar `npm test`. Sem esses runtimes, somente esses casos são ignorados — eles usam um HOME temporário e um servidor de teste, sem alterar seus hooks instalados. Um desses testes roda a cadeia completa de verdade — script gerado → subprocesso real → handler HTTP real → `AgentStore` real — e não apenas um receptor simulado. O CI (`.github/workflows/ci.yml` e `release.yml`) detecta `python3`/`pwsh` automaticamente no runner e define essas variáveis, então esses testes deixam de ser pulados em qualquer push, PR ou release.
 
 A webview depende de `acquireVsCodeApi` e usa uma entrada TypeScript, sem página HTML independente de demonstração. Para validar no navegador fora do VS Code, é necessário um ambiente de prévia que simule essa API e as mensagens dos agentes.
 
