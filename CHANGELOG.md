@@ -1,5 +1,7 @@
 # Changelog
 
+> **Note on 0.4.x history:** versions 0.4.5–0.4.9 were packaged and distributed as `.vsix` files but their `package.json` version bumps were never committed to this repository, so their exact contents cannot be reconstructed from git history. The entry below for 0.4.10 has been reconstructed from the corresponding commits. Going forward, every published version is tagged and built by CI (see `.github/workflows/ci.yml`) so this gap cannot recur.
+
 ## [0.6.1] — 2026-09-10 (current)
 
 ### Documentation
@@ -43,6 +45,18 @@
 
 ### Fixed
 - Idle-wandering agents could pick the exact same random spot on the floor and end up with their sprites stacked on top of each other — added collision avoidance between characters (same pattern already used to keep the pet off the furniture), with a minimum on-screen separation and a few retries when picking a wander target
+
+## [0.4.10] — 2026-08-06
+
+### Added
+- Office redesign with a coffee machine, plants, bookshelf, gaming setup, couch and TV, area rug and cat mascot.
+- Agents go idle after 10s of inactivity and can game, watch TV or get coffee, returning to their desk immediately when a tool call starts.
+
+### Fixed
+- Critical hook parsing bug: an escaped `\n` inside a TypeScript template string produced a literal newline inside the generated `python3 -c` script, causing a `SyntaxError` and a blank payload on every invocation.
+- Windows hook script (`hook.cmd`) never parsed the JSON payload — it only read `COPILOT_*` environment variables and ignored stdin entirely, so every event shipped with blank fields on Windows. Added `hook.ps1`, ported from the Unix branch's parsing logic, with `hook.cmd` now resolving the port and delegating to it.
+- `hooks.json` format corrected to a single file with a `{"hooks":{"PreToolUse":[...]}}` structure; `chat.hookFilesLocations` corrected to an object (`{path: true}`) instead of an array.
+- Canvas no longer clipped inside the webview (`html, body { height: 100% }`).
 
 ## [0.4.4] — 2026-06-09
 
