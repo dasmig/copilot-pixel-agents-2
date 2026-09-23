@@ -1,6 +1,6 @@
 # Copilot Pixel Agents
 
-**Version 0.8.0** - an isometric pixel office with a task inspector and a read-only live browser view. Supports **GitHub Copilot Agent Mode** and **Claude Code**.
+**Version 0.9.0** - an isometric pixel office with a task inspector and a read-only live browser view. Supports **GitHub Copilot Agent Mode** and **Claude Code**.
 
 [Releases for this fork](https://github.com/dasmig/copilot-pixel-agents-2/releases) | [Changelog](CHANGELOG.md) | [Upstream Marketplace listing](https://marketplace.visualstudio.com/items?itemName=cl-oliveira.copilot-pixel-agents)
 
@@ -10,12 +10,12 @@ The Marketplace listing belongs to the upstream publisher and may not contain th
 
 > Historical screenshot from **0.6.0**, using sample agents and tasks. The office layout, seating, and inspector are shown; newer connection and asset warnings are not pictured.
 
-## What's New in 0.8.0
+## What's New in 0.9.0
 
-- Open a token-scoped, read-only live office in your browser with **Show Pixel Office in Browser**. Keep VS Code running; the browser reconnects to its extension host and reports when the scene may be stale.
-- Agents choose collision-aware routes around furniture and replan when the room changes. Leisure seats have capacity-aware reservations.
-- Tool, waiting, and leisure state transitions no longer leave characters running in place, heading for an obsolete destination, or showing a stale speech bubble.
-- Long pauses in a hidden tab expire bubbles and leisure activities without teleporting agents. Missing character sprites are reported while the office retains procedural fallbacks.
+- The pet follows nearby agents, naps, and grooms while keeping to furniture-aware routes.
+- Agents search the bookshelf for files, read documents, carry and sip coffee, and type or use the mouse while writing.
+- Running commands show a terminal at the workstation; waiting agents glance aside and completed tools trigger short outcome-specific reactions.
+- These animations remain interruptible by new work and respect reduced-motion preferences.
 
 If upgrading, run **Install Copilot Hooks** again; existing hook scripts are not silently replaced. **Capture Task Details** is optional, off by default, and only retains details of future tasks after you enable it.
 
