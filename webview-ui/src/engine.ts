@@ -71,6 +71,7 @@ export interface Character {
   idleTimer: number;       // ms until next idle action
   leisureTimer: number;    // ms remaining in leisure activity
   leisureExpiresAt?: number;
+  coffeeStartedAt?: number;
 }
 
 interface Pet {

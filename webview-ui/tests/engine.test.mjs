@@ -280,6 +280,7 @@ test('coffee arrival holds the standing frame instead of cycling walking frames'
 
   tick();
   assert.equal(character.activity, 'coffee_break');
+  assert.equal(character.coffeeStartedAt, office.elapsedTime);
   for (let step = 0; step < 4; step++) tick();
   assert.equal(character.frame, 0);
 });
@@ -344,6 +345,7 @@ test('work interrupts coffee and an early completion arrives idle without a coff
 
   engine.onToolStart(office, character.id, 'tool', 'run_command', 'running');
   assert.equal(character.activity, 'walking');
+  assert.equal(character.coffeeStartedAt, undefined);
   assert.equal(coffee.occupant, null);
   engine.onToolDone(office, character.id, 'tool');
   assert.equal(character.activity, 'walking');

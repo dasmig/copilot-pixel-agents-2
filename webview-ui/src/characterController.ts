@@ -179,6 +179,7 @@ export function reduceCharacter(office: Office, character: Character, event: Cha
       if (character.navigationIntent === 'shelf') character.shelfStartedAt = office.elapsedTime;
       if (character.idleGoal && character.idleGoal !== 'desk' && character.workActivity === 'idle') {
         character.leisureExpiresAt = office.elapsedTime + character.leisureTimer;
+        if (character.idleGoal === 'coffee') character.coffeeStartedAt = office.elapsedTime;
         character.speechBubble = {
           text: leisureBubble(character.idleGoal),
           expiresAt: office.elapsedTime + character.leisureTimer,
@@ -206,6 +207,9 @@ export function reduceCharacter(office: Office, character: Character, event: Cha
       if (!office.interactions.reserve(event.spot.type, character.id)) return;
       character.leisureExpiresAt = Math.hypot(character.x - event.spot.standX, character.y - event.spot.standY) < 0.5
         ? office.elapsedTime + event.durationMs : undefined;
+      if (event.spot.type === 'coffee' && character.leisureExpiresAt !== undefined) {
+        character.coffeeStartedAt = office.elapsedTime;
+      }
       character.navigationIntent = 'leisure';
       character.idleGoal = event.spot.type;
       character.leisureTimer = event.durationMs;
@@ -250,6 +254,7 @@ export function reduceCharacter(office: Office, character: Character, event: Cha
       break;
   }
   resolveState(character);
+  if (character.activity !== 'coffee_break') character.coffeeStartedAt = undefined;
   if (character.navigationIntent !== 'shelf') {
     office.interactions.releaseCharacter(character.id, (type) => type === 'shelf-search');
   }

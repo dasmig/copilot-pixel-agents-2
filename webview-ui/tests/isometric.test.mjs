@@ -165,6 +165,88 @@ test('document page turns pause when reduced motion is requested', () => {
   }
 });
 
+test('coffee break holds a cup and raises it for a sip only while stationary', () => {
+  const { office, calls } = fixture();
+  const drinker = office.characters.get('agent-0');
+  const coffee = office.leisureSpots.find((spot) => spot.type === 'coffee');
+  drinker.x = drinker.targetX = coffee.standX;
+  drinker.y = drinker.targetY = coffee.standY;
+  drinker.idleGoal = 'coffee';
+  drinker.activity = 'coffee_break';
+  drinker.pose = 'drink-coffee';
+  coffee.occupant = drinker.id;
+  const anchor = engine.characterPose(drinker).anchor;
+  const hasCupAt = (y) => calls.some(([method, x, top, width, height]) =>
+    method === 'fillRect' && x === anchor.x + 4 && top === y && width === 6 && height === 5);
+
+  office.elapsedTime = 0;
+  engine.renderIsometric(office);
+  assert.equal(hasCupAt(anchor.y - 18), true);
+
+  calls.length = 0;
+  office.elapsedTime = 1700;
+  engine.renderIsometric(office);
+  assert.equal(hasCupAt(anchor.y - 26), true);
+
+  calls.length = 0;
+  drinker.activity = 'walking';
+  drinker.motion = 'walking';
+  engine.renderIsometric(office);
+  assert.equal(hasCupAt(anchor.y - 26), false);
+});
+
+test('reduced motion keeps the held coffee cup below the face', () => {
+  const { office, calls } = fixture();
+  const drinker = office.characters.get('agent-0');
+  drinker.activity = 'coffee_break';
+  drinker.pose = 'drink-coffee';
+  office.elapsedTime = 1700;
+  const anchor = engine.characterPose(drinker).anchor;
+
+  try {
+    motionPreference.matches = true;
+    engine.renderIsometric(office);
+    assert.ok(calls.some(([method, x, y, width, height]) =>
+      method === 'fillRect' && x === anchor.x + 4 && y === anchor.y - 18 && width === 6 && height === 5));
+    assert.equal(calls.some(([method, x, y, width, height]) =>
+      method === 'fillRect' && x === anchor.x + 4 && y === anchor.y - 26 && width === 6 && height === 5), false);
+  } finally {
+    motionPreference.matches = false;
+  }
+});
+
+test('coffee starts with a held cup instead of an immediate mid-sip frame', () => {
+  const { office, calls } = fixture();
+  const drinker = office.characters.get('agent-0');
+  drinker.activity = 'coffee_break';
+  drinker.pose = 'drink-coffee';
+  drinker.coffeeStartedAt = 1650;
+  office.elapsedTime = 1700;
+  const anchor = engine.characterPose(drinker).anchor;
+
+  engine.renderIsometric(office);
+
+  assert.ok(calls.some(([method, x, y, width, height]) =>
+    method === 'fillRect' && x === anchor.x + 4 && y === anchor.y - 18 && width === 6 && height === 5));
+});
+
+test('coffee station mug disappears only while its occupant holds it', () => {
+  const { office, calls } = fixture();
+  const drinker = office.characters.get('agent-0');
+  const coffee = office.leisureSpots.find((spot) => spot.type === 'coffee');
+  coffee.occupant = drinker.id;
+  const steamCount = () => calls.filter(([method, , , width, height]) =>
+    method === 'fillRect' && width === 1.5 && height === 2).length;
+
+  engine.renderIsometric(office);
+  assert.equal(steamCount(), 3);
+
+  calls.length = 0;
+  drinker.activity = 'coffee_break';
+  engine.renderIsometric(office);
+  assert.equal(steamCount(), 0);
+});
+
 test('camera fits all floor corners and wall tops in portrait and landscape views', () => {
   const { office } = fixture(8);
   for (const [w, h] of [[280, 600], [360, 700], [1200, 600], [700, 260]]) {

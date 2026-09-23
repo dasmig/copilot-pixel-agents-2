@@ -188,12 +188,15 @@ function decorations(ctx: CanvasRenderingContext2D, office: Office, items: DrawI
         box(ctx, x + 3, y + 2, 13, 9, 17, DARK, 17);
         front(ctx, x + 5, y + 11.1, 6, 28, 3, '#96dcba');
         front(ctx, x + 6, y + 11.1, 5, 21, 5, '#101e30');
-        box(ctx, x + 7, y + 10, 3, 3, 3, ['#f1e4cb', '#b2c3c5', '#dde5db'], 19);
-        const p = project(x + 8, y + 11, 25);
-        for (let i = 0; i < 3; i++) {
-          const phase = (office.elapsedTime / 1100 + i / 3) % 1;
-          ctx.fillStyle = `rgba(242,237,218,${(1 - phase) * 0.7})`;
-          ctx.fillRect(p.x + Math.sin(phase * 6) * 2, p.y - phase * 13, 1.5, 2);
+        const drinker = office.characters.get(spot.occupant ?? '');
+        if (drinker?.activity !== 'coffee_break' || drinker.motion !== 'stationary') {
+          box(ctx, x + 7, y + 10, 3, 3, 3, ['#f1e4cb', '#b2c3c5', '#dde5db'], 19);
+          const p = project(x + 8, y + 11, 25);
+          for (let i = 0; i < 3; i++) {
+            const phase = (office.elapsedTime / 1100 + i / 3) % 1;
+            ctx.fillStyle = `rgba(242,237,218,${(1 - phase) * 0.7})`;
+            ctx.fillRect(p.x + Math.sin(phase * 6) * 2, p.y - phase * 13, 1.5, 2);
+          }
         }
       });
       continue;
@@ -289,6 +292,19 @@ function heldDocument(ctx: CanvasRenderingContext2D, c: Character, anchor: Point
   }
 }
 
+function heldCoffee(ctx: CanvasRenderingContext2D, c: Character, anchor: Point, elapsedTime: number): void {
+  const phase = reducedMotion?.matches ? 0 : Math.max(0, elapsedTime - (c.coffeeStartedAt ?? 0)) % 3200;
+  const sipping = phase >= 1400 && phase < 2150;
+  const cupY = anchor.y - (sipping ? 26 : 18);
+  ctx.fillStyle = '#e1bca0';
+  ctx.fillRect(anchor.x + 1, sipping ? anchor.y - 23 : anchor.y - 16, 4, sipping ? 11 : 4);
+  ctx.fillStyle = '#96dcba';
+  ctx.fillRect(anchor.x + 4, cupY, 6, 5);
+  ctx.fillRect(anchor.x + 10, cupY + 1, 2, 3);
+  ctx.fillStyle = '#344e59';
+  ctx.fillRect(anchor.x + 4, cupY, 6, 1);
+}
+
 function character(ctx: CanvasRenderingContext2D, c: Character, elapsedTime: number): void {
   const p = characterPose(c).anchor;
   if (c.sitProgress > 0) {
@@ -301,6 +317,7 @@ function character(ctx: CanvasRenderingContext2D, c: Character, elapsedTime: num
     ctx.fillRect(p.x - 4, p.y - 28, 8, 9);
   }
   if (c.activity === 'reading' && c.motion === 'stationary') heldDocument(ctx, c, p, elapsedTime);
+  if (c.activity === 'coffee_break' && c.motion === 'stationary') heldCoffee(ctx, c, p, elapsedTime);
   if (c.workActivity !== 'searching' || c.navigationIntent !== 'shelf'
     || c.shelfStartedAt === undefined || c.motion !== 'stationary') return;
   const phase = Math.floor(((elapsedTime - c.shelfStartedAt) % 2400) / 600);

@@ -152,7 +152,7 @@ The selected task remains open as other events arrive. Output appears after comp
 
 ### Breaks and Pet
 
-- Idle agents may wander, drink coffee, play games, or watch TV. These are UI animations, not actions performed by the real agent.
+- Idle agents may wander, drink coffee, play games, or watch TV. At the coffee station, an agent picks up a cup and periodically lifts it for a sip; reduced-motion settings keep the cup still. These are UI animations, not actions performed by the real agent.
 - After a randomized timer based on 10 seconds, an idle agent has a 45% chance to select an available leisure spot. A break lasts **15-35 seconds** at the destination and expires on elapsed time even after a hidden-tab pause.
 - Each current leisure spot holds one agent at a time. Walkers plan around furniture and yield contested destinations; a room change invalidates old routes. New props and editable layouts require their own reachability validation.
 - File lookups such as `file_search`, `grep_search`, and `list_dir` send an agent to the bookshelf to scan rows and retrieve a folder. Only one agent can use it at a time; others search at their desks. Web search and non-search tools stay at the desk. A search that finishes early cancels the walk; the real tool never waits for the animation. This uses tool names, even with task-detail capture disabled.
