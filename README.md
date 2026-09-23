@@ -1,363 +1,342 @@
 # Copilot Pixel Agents
 
-**Versão atual: 0.6.1** — escritório isométrico, agentes sentados e inspetor de tarefas.
+**Version 0.8.0** - an isometric pixel office with a task inspector and a read-only live browser view. Supports **GitHub Copilot Agent Mode** and **Claude Code**.
 
-> Ao atualizar, reinstale os hooks e habilite **Capture Task Details** nas configurações para reter os conteúdos das próximas tarefas. A captura é opcional e vem desativada por padrão.
+[Releases for this fork](https://github.com/dasmig/copilot-pixel-agents-2/releases) | [Changelog](CHANGELOG.md) | [Upstream Marketplace listing](https://marketplace.visualstudio.com/items?itemName=cl-oliveira.copilot-pixel-agents)
 
-Visualize seus agentes de IA como personagens pixel art animados em um escritório com profundidade, móveis volumétricos e atividades em tempo real.
+The Marketplace listing belongs to the upstream publisher and may not contain this fork's latest features. Install this fork's VSIX from its GitHub release to get the browser view and reliability updates.
 
-Compatível com **GitHub Copilot Agent Mode** e **Claude Code**.
+![Copilot Pixel Agents 0.6.0: an isometric office with seated agents and the task inspector open on Output](.github/preview-v0.6.0.png)
 
-[Marketplace](https://marketplace.visualstudio.com/items?itemName=cl-oliveira.copilot-pixel-agents) · [Release v0.6.1](https://github.com/khalango02/copilot-pixel-agents/tree/v0.6.1) · [Histórico de versões](CHANGELOG.md)
+> Historical screenshot from **0.6.0**, using sample agents and tasks. The office layout, seating, and inspector are shown; newer connection and asset warnings are not pictured.
 
-![Copilot Pixel Agents 0.6.0: escritório isométrico com agentes sentados e inspetor de tarefas aberto na aba Output](.github/preview-v0.6.0.png)
+## What's New in 0.8.0
 
-> Interface da versão **0.6.0**, com agentes e dados fictícios para demonstração. A imagem mostra o escritório isométrico, as poses sentadas e a inspeção do resultado de uma tarefa.
+- Open a token-scoped, read-only live office in your browser with **Show Pixel Office in Browser**. Keep VS Code running; the browser reconnects to its extension host and reports when the scene may be stale.
+- Agents choose collision-aware routes around furniture and replan when the room changes. Leisure seats have capacity-aware reservations.
+- Tool, waiting, and leisure state transitions no longer leave characters running in place, heading for an obsolete destination, or showing a stale speech bubble.
+- Long pauses in a hidden tab expire bubbles and leisure activities without teleporting agents. Missing character sprites are reported while the office retains procedural fallbacks.
 
-## Novidades da versão 0.6.1
-
-- Documentação visual atualizada: o GIF antigo foi substituído pela captura acima. Sem alterações funcionais em relação à versão 0.6.0.
-
-## Novidades da versão 0.5.0
-
-- **Cenário 2,5D:** piso em losangos, duas paredes, janelas, plantas, estante, mesas e áreas de lazer com faces sombreadas.
-- **Profundidade:** móveis, personagens e mascote são desenhados em ordem de profundidade; os sprites continuam em pé, preservando o pixel art.
-- **Câmera navegável:** zoom de 50% a 300%, deslocamento por arraste e botão para reenquadrar a sala.
-- **Layout independente do painel:** duas estações por fileira; o escritório cresce com os agentes, sem reorganizar suas atividades ao redimensionar a janela.
-- **Interface renovada:** cabeçalho, barra de agentes, seleção adaptada à projeção e estado vazio compacto, sem esconder todo o escritório.
-- **Qualidade e distribuição:** nove testes de regressão da webview, verificação de tipos e pacote VSIX sem fontes de desenvolvimento ou sourcemaps.
-
-## Novidades da versão 0.6.0 — poses sentadas e inspetor de tarefas
-
-- **Sentar e levantar:** transições suaves de aproximadamente 300 ms de simulação nas cadeiras do computador, no assento de jogos e no sofá da TV. Cabeça e tronco mantêm a proporção pixel art; pernas dobram e os braços animam a digitação ou o controle.
-- **Interação com os móveis:** o personagem só senta quando chega ao assento correto e olha para a tela. Bases e encostos têm camadas separadas; seleção e balões acompanham a postura.
-- **Retorno natural ao trabalho:** ao receber uma ferramenta durante o lazer, o agente levanta, caminha até a mesa e senta. A animação não atrasa a execução real da ferramenta. O café continua sendo uma atividade em pé.
-- **Histórico inspecionável:** cada tarefa abre abas **Input**, **Output**, **Error** e **Event**, com dados recebidos pelos hooks, horários e resultado. A tarefa aberta acompanha a conclusão sem perder a aba selecionada.
-- **Correlação e restauração:** entradas têm identificador próprio por invocação, estados **Running / Completed / Failed / Interrupted** e restauração quando a webview é recriada, enquanto o host da extensão continuar ativo.
-- **Captura opcional:** conteúdos são retidos somente com `copilotPixelAgents.captureTaskDetails` habilitado. Há mascaramento best-effort, limites de tamanho e indicação explícita de dados ausentes, truncados ou sem correlação.
-- **Hooks atualizados:** transporte JSON serializado em Unix/Windows, registro de falhas e encerramento, validação HTTP e remoção do registro bruto de stdin/ambiente em disco.
-
-**Após atualizar para este código, execute Install Copilot Hooks novamente.** O instalador não atualiza silenciosamente os scripts já instalados. Sem reinstalação, os hooks antigos podem continuar enviando apenas metadados.
+If upgrading, run **Install Copilot Hooks** again; existing hook scripts are not silently replaced. **Capture Task Details** is optional, off by default, and only retains details of future tasks after you enable it.
 
 ---
 
-## Como funciona
+## How It Works
 
 ```
-Agente (Copilot / Claude Code)
-        │ hooks PreToolUse / PostToolUse / Stop
+Agent (Copilot / Claude Code)
+    │ PreToolUse / PostToolUse / Stop hooks
         ▼
- Script de hook ──POST──▶ Servidor local (127.0.0.1)
+ Hook script ──POST──▶ Local server (127.0.0.1)
                                 │
            ┌──────────┴──────────┐
            │                     │
            ▼                     ▼
          postMessage                SSE
-        Painel do VS Code     Navegador local
+    VS Code panel       Local browser
            │                     │
            └──────────┬──────────┘
             ▼
-             Canvas isométrico 2,5D
+         Isometric 2.5D canvas
 ```
 
-Cada sessão identificada pelos hooks vira um personagem. A primeira chamada de ferramenta também pode criar o personagem, mesmo sem um evento de início de sessão. As animações distinguem leitura, escrita, execução e pesquisa pelo nome da ferramenta.
+Each session identified by the hooks becomes a character. The first tool call can create a character even without a session-start event. Tool names determine reading, writing, execution, and search animations.
 
-O servidor escuta somente em `127.0.0.1`, inicialmente na porta `7823`. Se ela estiver ocupada, tenta as portas seguintes e registra a porta efetiva para os hooks. A mesma interface pode ser aberta no painel do VS Code ou no navegador local; selecionar um personagem não inicia, interrompe nem controla o agente de IA.
+The server listens only on `127.0.0.1`, starting at port `7823`. If that port is busy, it tries subsequent ports and records the active one for the hooks. The same office is available in a VS Code panel and a read-only local browser view. Selecting a character does not start, stop, or control the real AI agent. Keep the owning VS Code window open for browser updates; separate windows do not yet share a single live agent store.
 
 ---
 
-## Instalação rápida (via Marketplace)
+## Quick Start (Fork VSIX)
 
-### Requisitos
+### Requirements
 
-- VS Code desktop: o manifesto aceita **1.70.0 ou superior**, mas a integração Copilot exige uma versão com suporte aos hooks utilizados. Prefira uma versão atualizada.
-- GitHub Copilot com modo agente habilitado ou Claude Code instalado e configurado separadamente.
-- **macOS/Linux:** `sh` e `python3` no PATH. O novo script usa a biblioteca padrão do Python para JSON e HTTP; os scripts da versão publicada 0.5.0 também dependem de `curl`.
-- **Windows:** PowerShell disponível como `powershell`; o novo script usa `ConvertFrom-Json`/`ConvertTo-Json` e HTTP do .NET, com timeout e sem redirecionamentos/proxies.
+- VS Code desktop: the manifest supports **1.70.0 or later**, but Copilot hook integration requires a version that supports the hooks in use. Prefer a current release.
+- GitHub Copilot with Agent Mode enabled, or a separately installed and configured Claude Code.
+- **macOS/Linux:** `sh` and `python3` on the hook process's PATH. Current scripts use the Python standard library for JSON and HTTP; older scripts may require `curl`.
+- **Windows:** `powershell` on the PATH. The generated script uses PowerShell JSON commands and .NET HTTP with a timeout and no proxy or redirect forwarding.
 
-**Matriz de compatibilidade**
+**Compatibility**
 
-| Componente | Suportado | Observação |
+| Component | Supported | Notes |
 |---|---|---|
-| VS Code Desktop | `^1.70.0` (declarado em `package.json`) | Prefira uma versão atualizada; a integração de hooks do Copilot evolui com o VS Code. |
-| GitHub Copilot | Modo agente com `chat.hookFilesLocations` | Recurso mudou de formato entre versões — ver histórico de correções no [CHANGELOG](CHANGELOG.md). |
-| Claude Code | Hooks via `~/.claude/settings.json` | Compatibilidade universal desde a v0.4.0. |
-| Node.js (só para build local) | 20.x | Mesma versão usada em CI/Release (`.github/workflows/ci.yml`). Não é necessário para instalar pelo Marketplace. |
-| macOS/Linux runtime do hook | `sh` + `python3` no PATH | Exercitado de ponta a ponta em CI a cada push (script real → HTTP real → `AgentStore` real). |
-| Windows runtime do hook | `powershell`/`pwsh` no PATH | O `.ps1` gerado é exercitado em CI via `pwsh`, quando disponível no runner. |
+| VS Code Desktop | `^1.70.0` (declared in `package.json`) | Prefer a current version; Copilot's hook integration evolves with VS Code. |
+| GitHub Copilot | Agent Mode with `chat.hookFilesLocations` where supported | Hook configuration varies by version; see [Changelog](CHANGELOG.md). |
+| Claude Code | Hooks through `~/.claude/settings.json` | Supported since 0.4.0. |
+| Node.js (local builds only) | 20.x in CI; use a supported LTS release locally | Not required for installing the VSIX. |
+| macOS/Linux hook runtime | `sh` and `python3` on the PATH | Script-to-HTTP-to-store tests run in CI when the runtime is available. |
+| Windows hook runtime | `powershell` / `pwsh` on the PATH | The generated `.ps1` is tested with `pwsh` when available. |
 
-Não é necessário clonar o repositório nem instalar Node.js para usar a extensão pelo Marketplace.
+You do not need to clone the repository or install Node.js to use the fork's VSIX.
 
-1. Instale a extensão pelo [VS Code Marketplace](https://marketplace.visualstudio.com/items?itemName=cl-oliveira.copilot-pixel-agents)
-2. Na primeira ativação, se os hooks ainda não estiverem configurados, aparece o prompt:
-   **"🎮 Copilot Pixel Agents is ready! Install hooks…"** → clique **"Install Hooks (automatic)"**
-3. Pronto — hooks configurados para Copilot e Claude Code automaticamente.
+1. Download the VSIX from the [fork's Releases page](https://github.com/dasmig/copilot-pixel-agents-2/releases) and choose **Extensions: Install from VSIX...** in VS Code.
+2. On first activation, if hooks are not configured, select **Install Hooks (automatic)** in the installation prompt.
+3. Start a new Copilot Agent Mode or Claude Code session. Reinstall hooks after upgrading the extension so the generated scripts match this version.
 
-Ou abra a paleta de comandos — **⌘⇧P no macOS**, **Ctrl+Shift+P no Windows/Linux** — e execute **Copilot Pixel Agents: Install Copilot Hooks**. Quando a sala estiver vazia, o botão **Install / Reinstall Hooks** oferece a mesma ação.
+You can also run **Copilot Pixel Agents: Install Copilot Hooks** from the Command Palette, or use **Install / Reinstall Hooks** in an empty office.
 
-O instalador grava as configurações imediatamente e pode ser executado novamente para atualizar os scripts sem duplicar os registros já reconhecidos. Se uma sessão aberta não reconhecer a mudança, inicie uma nova sessão do agente. Confira o aviso de instalação: falhas de configuração são informadas por integração.
+The installer writes settings immediately and can update its scripts without duplicating owned hook registrations. If an existing session does not pick up the change, start a new one. Installation errors are reported per integration.
 
-### O que é instalado automaticamente
+### Installed Hook Files
 
-Os caminhos abaixo são relativos à pasta pessoal do usuário (`~` no macOS/Linux; `%USERPROFILE%` no Windows).
+Paths below are relative to your home directory (`~` on macOS/Linux; `%USERPROFILE%` on Windows).
 
-| Caminho relativo à pasta pessoal | Propósito |
+| Home-relative path | Purpose |
 |---|---|
-| .copilot-pixel-agents/hook.sh | Script gerado para macOS/Linux |
-| .copilot-pixel-agents/hook.cmd e .copilot-pixel-agents/hook.ps1 | Script de entrada e processamento JSON no Windows |
-| .copilot/hooks/hooks.json | Definições de hooks do Copilot no diretório padrão usado pelo instalador |
-| .copilot-pixel-agents/copilot-hooks/hooks.json | Cópia em diretório personalizado, registrado em `chat.hookFilesLocations` quando disponível |
-| .claude/settings.json | Configurações do Claude Code, com os hooks mesclados |
-| .copilot-pixel-agents/port | Porta efetiva, gravada quando o servidor inicia e lida pelos scripts |
-| .copilot-pixel-agents/hook-debug.log | Arquivo legado de diagnóstico: os novos scripts não escrevem nele; arquivos antigos não são apagados automaticamente |
+| `.copilot-pixel-agents/hook.sh` | Generated macOS/Linux hook script |
+| `.copilot-pixel-agents/hook.cmd` and `hook.ps1` | Windows entry point and JSON-processing script |
+| `.copilot/hooks/hooks.json` | Copilot hooks in the installer's default directory |
+| `.copilot-pixel-agents/copilot-hooks/hooks.json` | Custom-location copy registered through `chat.hookFilesLocations` when supported |
+| `.claude/settings.json` | Claude Code settings, merged with existing hooks |
+| `.copilot-pixel-agents/port` | Active port, written by the server and read by hook scripts |
+| `.copilot-pixel-agents/hook-debug.log` | Legacy diagnostic file; new scripts do not write to it or delete old logs |
 
-O instalador atual usa um único arquivo de definições por diretório e remove os antigos arquivos separados por evento. A configuração `chat.hookFilesLocations` é tratada como objeto de caminhos e valores booleanos; versões que não oferecem essa configuração não impedem a gravação no diretório padrão.
+The installer uses one hook definition file per directory and removes its older per-event files. It treats `chat.hookFilesLocations` as an object mapping paths to boolean values; versions without that setting can still use the default directory.
 
-**Importante:** o caminho legado .vscode/agent-hooks.json não é o destino atual do instalador. Para instalar ou atualizar a integração, use o comando da extensão; os scripts efetivamente instalados são gerados por [src/hooksInstaller.ts](src/hooksInstaller.ts), não copiados diretamente dos exemplos em [hooks/hook.sh](hooks/hook.sh) e [hooks/hook.cmd](hooks/hook.cmd).
+**Important:** legacy `.vscode/agent-hooks.json` is no longer an installer target. Use the extension command to install or update hooks. The scripts are generated by [src/hooksInstaller.ts](src/hooksInstaller.ts), not copied from the reference examples in [hooks/hook.sh](hooks/hook.sh) and [hooks/hook.cmd](hooks/hook.cmd).
 
 ---
 
-## Usar o agente
+## Using the Office
 
-Após instalar os hooks:
+After installing hooks:
 
-1. Abra **Copilot Pixel Agents → Pixel Office** na barra lateral, execute **Copilot Pixel Agents: Show Pixel Office** ou use **Copilot Pixel Agents: Show Pixel Office in Browser** na paleta de comandos
-2. Inicie uma sessão de agente normalmente (Copilot em Agent Mode ou `claude` no terminal)
-3. Cada sessão aparece como um personagem no escritório virtual
+1. Open **Copilot Pixel Agents → Pixel Office** in the sidebar, run **Show Pixel Office**, or run **Show Pixel Office in Browser** from the Command Palette.
+2. Start an agent session normally (Copilot Agent Mode or `claude` in a terminal).
+3. Each session appears as a character in the office.
 
-### Escritório isométrico
+### Isometric Office
 
-O cenário usa uma perspectiva **2,5D** com piso em losangos, paredes e móveis
-volumétricos, sombras e sobreposição por profundidade, mantendo os personagens pixel art.
+The **2.5D** office has diamond floor tiles, walls, furniture, shadows, and depth ordering while preserving upright pixel-art characters.
 
-- **Arraste o cenário** para navegar pelo escritório.
-- Use os **botões + / −** para aproximar ou afastar a câmera entre **50% e 300%**. Esses controles não são atalhos de teclado.
-- O botão **↺** retorna a **100%** e zera o deslocamento. Esse percentual é relativo ao enquadramento automático para o tamanho do painel.
-- Clique em um personagem ou no seu nome na barra inferior para ver as atividades.
-- O escritório cresce conforme novos agentes chegam; redimensionar o painel não interrompe suas atividades.
+- **Drag** to pan around the room. Use **+ / -** to zoom between **50% and 300%**; these controls are buttons, not keyboard shortcuts.
+- **Reset view** returns to **100%** of the automatic fit and clears panning.
+- Select a character on the canvas or in the bottom strip to inspect its activity.
+- The room grows with additional agents; resizing the panel does not interrupt their work.
 
-### Agentes, inspetor e histórico
+### Agents, Inspector, and History
 
-- Os personagens alternam entre **seis paletas** e mostram nome, indicador de atividade e balões com a ferramenta ou atividade atual.
-- Clique no personagem ou no nome na barra inferior para abrir o inspetor lateral. Feche com **✕** ou clicando numa área livre do cenário.
-- O inspetor mostra estado, tempo desde a criação do personagem na webview, tokens de entrada/saída, ferramentas em andamento e histórico com duração e tempo relativo.
-- O histórico mantém **até 50 entradas por personagem**; o campo **Tools** conta as entradas retidas, não um total ilimitado da sessão.
-- Seleção e clique usam a mesma projeção da câmera; arrastar a sala não abre o inspetor por acidente.
+- Characters cycle through **six palettes** and display their name, activity indicator, and a bubble for the current tool or leisure activity.
+- Select a character to open the inspector. Close it with **X** or by clicking an empty part of the room.
+- The inspector shows activity, elapsed session time, input/output tokens, active tools, and task history with durations and relative times.
+- History keeps **up to 50 entries per agent**; the **Tools** count reflects retained entries, not an unlimited session total.
+- Hit testing uses the camera projection, so dragging the room does not open the inspector accidentally.
 
-### Inspecionar o que passou por uma tarefa
+### Inspecting a Task
 
-1. Instale a versão **0.6.0 ou superior** e execute **Install Copilot Hooks** para atualizar o transporte dos eventos.
-2. Nas configurações, habilite **Copilot Pixel Agents: Capture Task Details** (`copilotPixelAgents.captureTaskDetails`). O link **Enable in Settings** no histórico abre essa configuração, sem ativá-la automaticamente.
-3. Execute uma **nova tarefa** com o agente. Abra o personagem e clique na linha da tarefa em **History**.
-4. Navegue pelas abas:
+1. Run **Install Copilot Hooks** after installing or upgrading to update event transport.
+2. Enable **Copilot Pixel Agents: Capture Task Details** (`copilotPixelAgents.captureTaskDetails`) in Settings. **Enable in Settings** in the history view opens the setting but does not enable it for you.
+3. Start a **new task**, select its character, and choose the task in **History**.
+4. Inspect its tabs:
 
-| Aba | Conteúdo |
+| Tab | Contents |
 |---|---|
-| **Input** | Argumentos recebidos do provedor: por exemplo caminho, comando ou conteúdo de edição |
-| **Output** | Resposta/resultado enviado pelo hook de conclusão, quando presente |
-| **Error** | Erro fornecido pelo hook; a ausência de um payload de erro não comprova sucesso |
-| **Event** | Metadados normalizados: IDs da invocação/ferramenta, horários, estado e origem |
+| **Input** | Provider arguments, such as a path, command, or edit contents |
+| **Output** | Result supplied by a completion hook, when available |
+| **Error** | Hook error; an absent error payload does not prove success |
+| **Event** | Normalized invocation/tool IDs, timestamps, status, and origin |
 
-Use **← History** para voltar à lista e **Close ×** para fechar. As linhas são botões acessíveis por teclado; nas abas, use as setas esquerda/direita ou Home/End. JSON é formatado quando possível; texto e código são exibidos literalmente, **sem execução de HTML ou Markdown**.
+Use **History** to return to the list and **Close** to dismiss it. History rows are keyboard-accessible buttons; in tabs, use Left/Right or Home/End. JSON is formatted when possible. Text and code are displayed literally, **never executed as HTML or Markdown**.
 
-O detalhe continua aberto quando chegam outros eventos. A saída aparece após a conclusão, se o provedor a enviar. Falhas e interrupções são diferenciadas; `Stop` encerra as tarefas pendentes como **Interrupted**. Eventos sem ID confiável ou sem início correspondente recebem **Unmatched**, sem associar arbitrariamente ferramentas simultâneas pelo nome. A duração de eventos sem início não representa o tempo real de execução.
+The selected task remains open as other events arrive. Output appears after completion if the provider sends it. Failure and interruption are distinct; `Stop` marks pending tasks **Interrupted**. Events lacking a reliable ID or matching start are **Unmatched**, rather than being arbitrarily paired by tool name. A task without a start event has no reliable runtime duration.
 
-**Não é o depurador interno do chat do VS Code.** A extensão não lê transcrições, prompts do sistema, raciocínio interno do modelo nem arquivos de depuração do chat. A visualização inclui somente os campos permitidos que chegam pelos hooks; alguns provedores não fornecem argumentos ou resultados. Eventos antigos não podem ser reconstruídos. As abas informam quando a captura está desligada ou um dado não foi recebido, em vez de inventar conteúdo.
+**This is not the VS Code chat debugger.** The extension does not read transcripts, system prompts, model reasoning, or chat debug files. Only allowlisted fields received through hooks are shown; some providers omit arguments or results. Past events cannot be reconstructed. The tabs report missing data or disabled capture instead of inventing it.
 
-#### Retenção e proteção dos conteúdos
+#### Retention and Privacy
 
-- Captura **desativada por padrão**. A configuração controla a retenção na extensão; os scripts atualizados encaminham os campos de ferramenta permitidos ao servidor de loopback, que descarta os conteúdos quando a captura está desligada.
-- Até **50 entradas por agente**, incluindo tarefas pendentes. Entradas mais antigas são descartadas; pendências descartadas são marcadas como interrompidas antes da remoção. A invocação é identificada separadamente do `tool_id`, permitindo sua reutilização após a conclusão.
-- Cada campo tem limite final de **16.000 caracteres**, profundidade de **8 níveis** e orçamento de **2.000 nós**. Conteúdos limitados são sinalizados como truncados; os scripts também podem omitir detalhes acima do limite de transporte de **60.000 bytes por campo**.
-- Requisições HTTP acima de **256 KiB** são rejeitadas com **413**; JSON ou metadados inválidos recebem **400**. Os scripts preservam metadados válidos ao omitir campos excessivos e retornam a decisão `allow` mesmo se o envio falhar.
-- Chaves sensíveis e padrões comuns de credenciais são mascarados; campos de ambiente, prompts e transcrições são excluídos da retenção. O filtro é **best-effort**, não uma garantia de remoção de todo segredo. Argumentos e resultados podem conter código-fonte ou dados privados.
-- Os dados não são persistidos em disco pelo novo fluxo. Desativar a configuração **apaga os conteúdos retidos**, inclusive de tarefas em andamento e da visualização aberta; reativá-la não os recupera. Registros locais legados continuam sob responsabilidade do usuário.
+- Capture is **off by default**. Updated scripts forward allowlisted fields to the loopback server, which discards content when capture is disabled.
+- Up to **50 entries per agent**, including pending tasks, are retained. Older entries are evicted; evicted pending tasks are marked interrupted. Invocation identity is separate from `tool_id`, allowing IDs to be reused after completion.
+- Each retained field is limited to **16,000 characters**, **8 levels** of nesting, and **2,000 nodes**. Limited content is marked truncated; hook scripts may omit fields larger than the **60,000-byte per-field** transport limit.
+- HTTP requests larger than **256 KiB** receive **413**; invalid JSON or metadata receives **400**. Scripts can omit oversized details while preserving valid metadata and return the `allow` decision even if delivery fails.
+- Sensitive keys and common credential patterns are redacted; environment fields, prompts, and transcripts are excluded from retention. Redaction is **best-effort**, not a guarantee. Arguments and results may contain source code or private data.
+- New captures are kept in memory, not written to disk. Disabling capture **clears retained details**, including live tasks and the open view; reenabling it does not restore them. Older local diagnostic logs are not removed automatically.
 
-### Pausas e mascote
+### Breaks and Pet
 
-- Agentes ociosos podem passear, tomar café, jogar ou assistir à TV. As pausas são animações da interface, não ações executadas pelo agente real.
-- A decisão de fazer uma pausa usa um temporizador aleatório baseado em 10 segundos, com 45% de chance de escolher um local livre. Cada pausa dura entre **15 e 35 segundos**.
-- Cada local de lazer recebe um agente por vez. Novos destinos de passeio são comparados aos demais personagens para reduzir sobreposição, com separação mínima de 20 unidades do mundo; isso não equivale a navegação completa com colisões.
-- Ao começar uma nova ferramenta, o personagem levanta caso esteja sentado, caminha até sua mesa e volta a sentar; a ferramenta real pode terminar antes dessa animação.
-- Um gato animado alterna entre sentar e caminhar, evitando as áreas de móveis de lazer.
+- Idle agents may wander, drink coffee, play games, or watch TV. These are UI animations, not actions performed by the real agent.
+- After a randomized timer based on 10 seconds, an idle agent has a 45% chance to select an available leisure spot. A break lasts **15-35 seconds** at the destination and expires on elapsed time even after a hidden-tab pause.
+- Each current leisure spot holds one agent at a time. Walkers plan around furniture and yield contested destinations; a room change invalidates old routes. New props and editable layouts require their own reachability validation.
+- When a tool starts, a seated character rises, heads to its desk, and sits again; the real tool can finish before the animation does.
+- The animated pet alternates between sitting and walking while avoiding current furniture footprints.
 
-### Tokens e persistência
+### Tokens and Persistence
 
-A interface aceita eventos `token_usage` com contagens de entrada e saída. Quando esses dados chegam, o inspetor exibe os valores e uma barra abaixo do nome representa a soma, limitada visualmente a **200.000 tokens**, ficando vermelha acima de 80% dessa referência.
+The UI accepts `token_usage` events with input and output counts. When supplied, the inspector shows those counts and a bar under the name shows their sum, visually capped at **200,000 tokens** and turning red above 80% of that reference.
 
-**Não há coleta automática de contagens de tokens nas chamadas comuns de ferramenta.** Os novos scripts podem encaminhar um evento `token_usage` com contagens se o provedor já o fornecer, mas o instalador não registra um evento de coleta de tokens. Sem esses dados, os valores permanecem zerados. A referência de 200.000 é fixa, não configurável, e não representa automaticamente o limite real do modelo nem uma estimativa de custo.
+**Normal tool calls do not automatically provide token counts.** Scripts may forward a `token_usage` event when the provider supplies one, but the installer does not register a token-collection hook. Otherwise counts remain zero. The fixed 200,000-token reference is not a model context limit or cost estimate.
 
-O estado é mantido em memória no host da extensão, não em um histórico persistente. Ocultar o painel preserva seu contexto; recriar a webview restaura as últimas 50 tarefas, ferramentas ativas, contagens e início da sessão enquanto o host continuar ativo. Encerrar a sessão remove o agente e seu histórico; recarregar o VS Code encerra o armazenamento em memória.
+Agent state lives in the extension host's memory, not in a persistent database. Hiding the panel retains its state; recreating the webview restores up to 50 tasks, active tools, token counts, and session start while the host remains active. Ending a session removes its character and history; restarting VS Code discards in-memory state.
 
 ---
 
-## Eventos suportados
+## Supported Events
 
-### Eventos registrados automaticamente
+### Hooks Installed Automatically
 
-- **Copilot (novo instalador):** `PreToolUse`, `PostToolUse`, `Stop`, `SessionStart` e `UserPromptSubmit`, com `type: command` em cada entrada.
-- **Claude Code:** os eventos acima mais `PostToolUseFailure` e `SessionEnd`. Esses dois eventos não constam entre os hooks suportados pela [documentação atual do VS Code](https://code.visualstudio.com/docs/copilot/customization/hooks), portanto não são registrados na configuração específica do Copilot.
-- A reinstalação atualiza apenas os comandos pertencentes à extensão e preserva hooks não relacionados e outras configurações válidas. Configurações inválidas são reportadas, não substituídas silenciosamente.
+- **Copilot:** `PreToolUse`, `PostToolUse`, `Stop`, `SessionStart`, and `UserPromptSubmit`, each registered with `type: command`.
+- **Claude Code:** those events plus `PostToolUseFailure` and `SessionEnd`. The additional events are not in the [current VS Code hooks documentation](https://code.visualstudio.com/docs/copilot/customization/hooks), so they are not registered for Copilot.
+- Reinstallation updates only commands owned by this extension; unrelated hooks and valid settings remain untouched. Invalid configurations are reported rather than silently replaced.
 
-Os scripts gerados interpretam campos em camelCase e snake_case, como `sessionId`/`session_id`, `toolName`/`tool_name` e `hookEventName`/`hook_event_name`. Também normalizam nomes de eventos e retornam `{"permissionDecision":"allow"}` no stdout para o protocolo de hooks do Copilot.
+Generated scripts accept camelCase and snake_case fields, such as `sessionId`/`session_id`, `toolName`/`tool_name`, and `hookEventName`/`hook_event_name`. They normalize event names and return `{"permissionDecision":"allow"}` to stdout for the Copilot hooks protocol.
 
-### Eventos aceitos pelo servidor
+### Events Accepted by the Server
 
-Nem todo evento aceito é registrado ou enviado pela instalação padrão.
+Not every accepted event is installed or sent by default.
 
-| Evento interno | Efeito |
+| Internal event | Effect |
 |---|---|
-| `session_start` | Personagem aparece no escritório |
-| `pre_tool_use` (read/view) | 📖 Lendo |
-| `pre_tool_use` (write/edit) | ⌨ Digitando |
-| `pre_tool_use` (bash/exec) | ⚙ Executando |
-| `pre_tool_use` (search/grep) | 🔍 Pesquisando |
-| `post_tool_use` | Finaliza uma ferramenta; fica ocioso quando não há outras em andamento |
-| `waiting` | ⏳ Aguardando input |
-| `stop` | Marca a sessão como ociosa; não remove o personagem |
-| `session_end` | Personagem sai do escritório |
-| `token_usage` | Atualiza contagens de tokens de um agente já existente |
+| `session_start` | Character enters the office |
+| `pre_tool_use` (read/view) | Reading |
+| `pre_tool_use` (write/edit) | Typing |
+| `pre_tool_use` (bash/exec) | Executing |
+| `pre_tool_use` (search/grep) | Searching |
+| `post_tool_use` | Finishes a tool; becomes idle when no other tools remain active |
+| `waiting` | Waiting for input |
+| `stop` | Marks the session idle; does not remove its character |
+| `session_end` | Character leaves the office |
+| `token_usage` | Updates token counts of an existing agent |
 
-O normalizador também reconhece `SubagentStart` e `SubagentStop`, além de variantes como `preToolUse`, `agentStop` e `userPromptSubmitted`. Hooks de subagentes não são registrados automaticamente; **normalizar um evento não instala seu hook**. O suporte e os dados enviados dependem da versão do provedor.
+The normalizer also recognizes `SubagentStart`, `SubagentStop`, and variants such as `preToolUse`, `agentStop`, and `userPromptSubmitted`. Subagent hooks are not installed automatically: **accepting an event does not install its hook**. Support and payload availability depend on the provider version.
 
-Campos de conteúdo reconhecidos: `tool_input`/`toolInput`/`toolArgs`, `tool_response`/`toolResponse`/`tool_result`/`toolResult` e `error`/`tool_error`/`toolError`. O evento de falha, `success: false` e indicadores de erro da resposta são preservados mesmo com a captura desligada.
+Recognized content fields include `tool_input`/`toolInput`/`toolArgs`, `tool_response`/`toolResponse`/`tool_result`/`toolResult`, and `error`/`tool_error`/`toolError`. Failure events, `success: false`, and response error flags remain available even when capture is off.
 
-Integrações próprias podem enviar JSON por **POST** à porta local ativa, usando `event` e `session_id`, mais os campos específicos definidos em [src/types.ts](src/types.ts). Use o mesmo `tool_id` para correlacionar início e fim de uma ferramenta. Rotas GET existem somente sob o caminho aleatório criado para a visualização no navegador; a raiz continua reservada para os hooks.
+Custom integrations can POST JSON to the active local port with `event`, `session_id`, and the applicable fields in [src/types.ts](src/types.ts). Use the same `tool_id` to pair tool start and finish. GET routes are available only under the random browser-view path; the server root is reserved for hooks.
 
 ---
 
-## Comandos
+## Commands
 
-Disponíveis na paleta de comandos, sob a categoria **Copilot Pixel Agents**:
+Available from the Command Palette under **Copilot Pixel Agents**:
 
-| Comando | Função |
+| Command | Action |
 |---|---|
-| **Show Pixel Office** | Abre/foca a visão do escritório |
-| **Show Pixel Office in Browser** | Abre uma visualização local e somente leitura no navegador padrão |
-| **Install Copilot Hooks** | Instala ou atualiza os scripts e configura Copilot e Claude Code |
-| **Show Hooks Configuration** | Abre um documento informativo com caminhos de configuração |
+| **Show Pixel Office** | Open or focus the office view |
+| **Show Pixel Office in Browser** | Open the local read-only browser view |
+| **Install Copilot Hooks** | Install or update scripts and configure Copilot and Claude Code |
+| **Show Hooks Configuration** | Show the hook configuration paths |
 
-> Na versão 0.6.0, **Show Hooks Configuration** ainda lista o caminho legado do Copilot e o script Unix, inclusive no Windows. Para os destinos efetivos, consulte a tabela de instalação deste README.
+Use the [installed hook files](#installed-hook-files) table for the actual destinations of generated scripts; reference scripts in the repository are not the installed versions.
 
-## Configurações
+## Settings
 
-Abra as configurações (**⌘, no macOS**, **Ctrl+, no Windows/Linux**) e pesquise `copilotPixelAgents`:
+Open VS Code Settings and search for `copilotPixelAgents`:
 
-| Chave | Padrão | Descrição |
+| Key | Default | Description |
 |---|---|---|
-| `copilotPixelAgents.port` | `7823` | Porta do servidor de hooks |
-| `copilotPixelAgents.autoShowPanel` | `false` | Abrir painel automaticamente no startup |
-| `copilotPixelAgents.captureTaskDetails` | `false` | Reter entradas, saídas e erros de ferramentas em memória; desligar elimina os conteúdos capturados |
+| `copilotPixelAgents.port` | `7823` | Hook server port |
+| `copilotPixelAgents.autoShowPanel` | `false` | Open the panel automatically at startup |
+| `copilotPixelAgents.captureTaskDetails` | `false` | Keep tool inputs, outputs, and errors in memory; turning it off purges captured details |
 
-Porta e abertura automática são lidas na ativação da extensão; recarregue a janela após alterá-las. **Capture Task Details é aplicada imediatamente**, sem recarregar. A barra superior informa a porta realmente utilizada. Os scripts acompanham essa porta pelo arquivo gravado pelo servidor, sem precisar reinstalar os hooks apenas por uma mudança de porta.
+Port and automatic opening are read at extension activation; reload the window after changing them. **Capture Task Details applies immediately**. The VS Code panel's status bar shows the actual port. Hook scripts discover the active port from the server's port file, so changing the port alone does not require reinstalling them.
 
-## Solução de problemas
+## Troubleshooting
 
-### Nenhum agente aparece
+### No Agents Appear
 
-1. Abra **View → Output** e selecione **Copilot Pixel Agents**. Confira a mensagem de início do servidor e os eventos recebidos.
-2. Execute **Install Copilot Hooks** novamente e confira se houve avisos para alguma integração.
-3. Verifique os requisitos do seu sistema: especialmente `python3` no PATH do processo que executa os hooks no macOS/Linux (`curl` também é necessário com scripts antigos), ou PowerShell no Windows.
-4. Inicie uma nova sessão e peça ao agente para usar uma ferramenta; apenas abrir o chat não garante um evento.
-5. Confira a porta na barra superior e os registros de metadados no canal de saída. Os scripts atualizados não geram log bruto em disco; registros antigos não comprovam que os novos eventos estão chegando.
+1. Open **View → Output** and select **Copilot Pixel Agents**. Look for the server startup message and event metadata.
+2. Run **Install Copilot Hooks** again and check for integration-specific warnings.
+3. Check that `python3` is on the hook process's PATH on macOS/Linux (older scripts may also require `curl`), or that PowerShell is available on Windows.
+4. Start a new agent session and ask it to use a tool; opening chat alone might not trigger an event.
+5. Check the active port in the panel and the metadata-only Output channel. Old log files do not prove that the new scripts are receiving events.
 
-### Porta ocupada ou várias janelas
+### Port Busy or Multiple VS Code Windows
 
-O servidor tenta a próxima porta disponível automaticamente. O arquivo de porta é compartilhado entre as janelas do mesmo usuário; a última instância que o gravar passa a receber os eventos enviados pelos scripts. Na versão atual, não há roteamento independente por workspace.
+The server tries the next available port. The per-user port file is shared between windows: the last window to write it receives subsequent hook events. There is no cross-window, workspace-aware live-office broker yet.
 
-### Personagem permanece após o agente parar
+### Character Remains After the Agent Stops
 
-`Stop` significa ociosidade, não remoção. A remoção depende de `session_end`; o novo instalador registra `SessionEnd` para Claude Code. No Copilot, esse evento não é documentado, então o personagem pode permanecer ocioso até recarregar a extensão.
+`Stop` means idle, not removed. Removal requires `session_end`; the installer registers `SessionEnd` for Claude Code. Copilot does not document that event, so a character may remain idle until the extension reloads.
 
-### Diagnóstico e privacidade
+### Diagnostics and Privacy
 
-Os novos scripts não registram stdin, ambiente ou payloads em disco; o canal de saída registra apenas o tipo do evento e o tamanho, ou o status da rejeição. Logs legados podem conter dados privados e não são apagados automaticamente. **Revise qualquer conteúdo antes de compartilhá-lo, mesmo após o mascaramento do inspetor.** O servidor permanece restrito ao loopback. A visualização no navegador usa um caminho aleatório renovado a cada ativação e não habilita CORS; o endpoint POST dos hooks continua sem autenticação. Não exponha a porta na rede nem compartilhe a URL da visualização.
+New scripts do not write stdin, environment variables, or tool payloads to disk. The Output channel logs fixed event metadata and size or rejection status, not task contents. Legacy logs may contain private data and are not deleted automatically. **Review anything you share, even after inspector redaction.** The server binds to loopback. Browser viewing uses a random path rotated on activation and does not enable CORS; hook POST remains unauthenticated. Do not expose the port to the network or share the browser URL.
 
 ---
 
-## Desenvolvimento local
+## Local Development
 
 ```bash
-git clone https://github.com/khalango02/copilot-pixel-agents
-cd copilot-pixel-agents
-npm install
-cd webview-ui && npm install && cd ..
+git clone https://github.com/dasmig/copilot-pixel-agents-2.git
+cd copilot-pixel-agents-2
+npm ci
+npm --prefix webview-ui ci
 ```
 
-Prefira **Node.js 22 LTS ou superior compatível com Vite** e npm para desenvolvimento; Node.js 21 não faz parte das versões suportadas por Vite 6. Abra a pasta clonada no VS Code e selecione **Run Extension**; **F5** executa a tarefa de build e abre uma janela de desenvolvimento com a extensão carregada.
+Use a current Node.js LTS compatible with Vite 6 (CI uses Node.js 20). Open the cloned folder in VS Code and select **Run Extension**; **F5** runs the build task and opens an Extension Development Host.
 
-### Build e validação
+### Build and Validation
 
-Execute os comandos a partir da raiz do repositório:
+Run commands from the repository root:
 
-| Comando | Finalidade |
+| Command | Purpose |
 |---|---|
-| `npm test` | Executa os testes de backend e webview |
-| `npm run typecheck` | Verifica os tipos do backend e da webview |
-| `npm run vscode:prepublish` | Build completo da webview e da extensão |
-| `npm run build:webview` | Compila a interface com Vite |
-| `npm run build` | Compila somente o código da extensão com esbuild |
-| `npm run dev` | Observa alterações somente no código da extensão |
-| `npm --prefix webview-ui test` | Executa os testes de renderização, posturas e inspetor com `node:test` e jsdom |
-| `npm --prefix webview-ui run typecheck` | Verifica os tipos da webview |
-| `npx tsc --noEmit` | Verifica os tipos da extensão |
+| `npm test` | Run extension-host and webview tests |
+| `npm run typecheck` | Typecheck both projects |
+| `npm run vscode:prepublish` | Build the webview and extension |
+| `npm run build:webview` | Build the Vite webview |
+| `npm run build` | Build only the extension with esbuild |
+| `npm run test:package` | Check all registered sprites in `dist/webview/assets` after building |
+| `npm run package` | Build and produce a VSIX |
+| `npm run dev` | Watch the extension bundle (not the webview) |
 
-Os testes cobrem projeção, enquadramento, zoom, arraste, seleção por profundidade, transições de postura, ocupação dos assentos, crescimento da sala, resize, renderização sem sprites, navegação do inspetor, conteúdo hostil, correlação de eventos, limite HTTP, mascaramento e limpeza ao desativar a captura, transporte SSE protegido por token, colisão entre agentes ociosos, atribuição de vagas de lazer, desvio de mobília pelo mascote e o histórico de ferramentas (`onToolDone`/`syncHistory`/liberação de assento ao remover um agente). Eles empacotam TypeScript em memória usando o esbuild da raiz; instale as dependências tanto da raiz quanto da webview.
+Tests cover office projection, controls, poses, inspector safety and history, hooks and HTTP validation, SSE snapshots and reconnects, collision-aware routing, reservations, deadlines, and asset fallbacks. They bundle production TypeScript in memory using esbuild; install dependencies for both projects.
 
-Os testes de execução real dos scripts são opcionais localmente: informe o caminho do Python configurado em `PIXEL_TEST_PYTHON` ou do PowerShell em `PIXEL_TEST_PWSH` antes de executar `npm test`. Sem esses runtimes, somente esses casos são ignorados — eles usam um HOME temporário e um servidor de teste, sem alterar seus hooks instalados. Um desses testes roda a cadeia completa de verdade — script gerado → subprocesso real → handler HTTP real → `AgentStore` real — e não apenas um receptor simulado. O CI (`.github/workflows/ci.yml` e `release.yml`) detecta `python3`/`pwsh` automaticamente no runner e define essas variáveis, então esses testes deixam de ser pulados em qualquer push, PR ou release.
+Real hook-script execution tests are optional locally. Set `PIXEL_TEST_PYTHON` or `PIXEL_TEST_PWSH` to the installed runtime path before `npm test`; unavailable runtimes cause only those cases to skip. They use a temporary home directory and test HTTP server, not your installed hooks. When GitHub Actions is enabled for this fork, CI detects available `python3`/`pwsh` runtimes automatically.
 
-A entrada TypeScript seleciona automaticamente o transporte disponível: `acquireVsCodeApi` no painel ou Server-Sent Events na página servida pela extensão. O navegador continua dependendo do host da extensão para receber eventos e deixa de atualizar quando a janela do VS Code é encerrada.
+The webview chooses `acquireVsCodeApi` in the panel or Server-Sent Events in the browser. Browser updates require the extension host to remain running; reopening a connection starts with an authoritative snapshot.
 
-### Empacotamento e publicação
+### Packaging and Releases
 
-- `npm run package` executa o build completo e gera um VSIX com a versão de [package.json](package.json).
-- O pacote inclui a extensão compilada, a webview, assets, ícones, hooks, licença e documentação. Fontes de desenvolvimento, testes, dependências e sourcemaps são excluídos pelas regras de [.vscodeignore](.vscodeignore).
-- Para instalar o artefato localmente, use **Extensions: Install from VSIX…** na paleta de comandos.
-- Para publicar uma nova versão, sincronize a versão em [package.json](package.json) e [package-lock.json](package-lock.json), atualize [CHANGELOG.md](CHANGELOG.md), execute as validações e use `npm run publish` com acesso ao publisher **cl-oliveira**.
-- Informe credenciais somente no prompt seguro do terminal ou pelo mecanismo de segredos do ambiente. Não coloque tokens no código, em commits ou na documentação.
+- `npm run package` builds and packages the version declared in [package.json](package.json); run `npm run test:package` after building to check registered sprite assets.
+- The VSIX includes compiled extension and webview code, assets, icons, hooks, license, and README. Development source, tests, dependencies, source maps, and the unpublished office evolution plan are excluded by [.vscodeignore](.vscodeignore).
+- Install this fork's artifact with **Extensions: Install from VSIX...**. Do not confuse it with the upstream Marketplace listing, which has a different publisher and release schedule.
+- To publish a fork GitHub Release, keep root and webview manifests and lockfiles at the same version, update [CHANGELOG.md](CHANGELOG.md), pass typecheck/tests/build/packaging, and tag the merged commit `v0.8.0`. The [release workflow](.github/workflows/release.yml) creates a GitHub Release with a VSIX when Actions is enabled on the fork.
+- Marketplace publishing additionally requires permission and credentials for the configured `cl-oliveira` publisher; this fork's GitHub Release does **not** publish to that Marketplace listing. Never put access tokens in files or commits.
 
-Atualizar este README no GitHub não altera a descrição de um VSIX já publicado; a documentação do Marketplace acompanha o pacote enviado.
+Changing this README on GitHub does not change an already published VSIX; the packaged README is fixed at build time.
 
 ---
 
-## Estrutura do projeto
+## Project Structure
 
 ```
 copilot-pixel-agents/
-├── src/                    # Extensão VS Code (TypeScript)
-│   ├── extension.ts        # Entry point + prompt de instalação automática
-│   ├── hooksServer.ts      # HTTP server recebe eventos dos hooks
-│   ├── agentStore.ts       # Estado dos agentes em memória
-│   ├── agentMessages.ts    # Contrato compartilhado de atualizações da interface
-│   ├── browserOffice.ts    # Página local protegida e stream SSE
+├── src/                    # VS Code extension (TypeScript)
+│   ├── extension.ts        # Entry point and hook setup prompt
+│   ├── hooksServer.ts      # Loopback HTTP hook server
+│   ├── agentStore.ts       # In-memory agent state
+│   ├── agentMessages.ts    # Shared UI message mapping
+│   ├── browserOffice.ts    # Token-scoped browser page and SSE stream
 │   ├── viewProvider.ts     # WebviewViewProvider
-│   ├── hooksInstaller.ts   # Gera scripts Unix/Windows e configura integrações
-│   ├── hookScripts.ts      # Transporte JSON com campos permitidos
-│   ├── hooksConfig.ts      # Registro e mesclagem dos hooks
-│   ├── hookHttp.ts         # Recepção HTTP limitada e validada
-│   ├── hookPayload.ts      # Normalização de eventos
-│   ├── taskDetails.ts      # Mascaramento e limites dos conteúdos
+│   ├── hooksInstaller.ts   # Generates Unix/Windows scripts and settings
+│   ├── hookScripts.ts      # Allowlisted JSON transport
+│   ├── hooksConfig.ts      # Hook registration and merging
+│   ├── hookHttp.ts         # Bounded and validated HTTP intake
+│   ├── hookPayload.ts      # Event normalization
+│   ├── taskDetails.ts      # Content redaction and limits
 │   └── types.ts
-├── webview-ui/src/         # Canvas pixel art (TypeScript + Vite)
-│   ├── engine.ts           # Simulação, layout e interação com a câmera
-│   ├── isometric.ts        # Projeção 2,5D, cenário, profundidade e seleção
-│   ├── seating.ts          # Poses e transições de sentar/levantar
-│   ├── history.ts          # Sincronização do histórico por invocação
-│   ├── taskInspector.ts    # Detalhe da tarefa e abas de payload
-│   ├── hostTransport.ts    # Transporte VS Code ou navegador
-│   ├── sprites.ts          # Carregamento de sprites
-│   ├── main.ts             # Bootstrap e handler de mensagens
+├── webview-ui/src/         # Pixel-art canvas (TypeScript + Vite)
+│   ├── engine.ts           # Simulation, layout, and camera controls
+│   ├── characterController.ts # Agent intent, pose, and bubble transitions
+│   ├── gridPathfinder.ts   # Four-connected route search
+│   ├── interactionRegistry.ts # Leisure capacity and reservations
+│   ├── isometric.ts        # 2.5D projection and depth ordering
+│   ├── seating.ts          # Seated poses and stand/sit transitions
+│   ├── history.ts          # Per-invocation history synchronization
+│   ├── taskInspector.ts    # Inspector and task payload tabs
+│   ├── hostTransport.ts    # VS Code messages or browser SSE
+│   ├── sprites.ts          # Asset registry and sprite loading
+│   ├── main.ts             # UI bootstrap and message dispatch
 │   └── style.css
 ├── hooks/
-│   ├── hook.sh             # Script de referência Unix (não é o gerador atual)
-│   └── hook.cmd            # Script de referência Windows
+│   ├── hook.sh             # Unix reference, not the installed generator
+│   └── hook.cmd            # Windows reference
 └── media/icon.png
 ```
 
-Testes: [backend](tests/backend.test.mjs), [renderização](webview-ui/tests/isometric.test.mjs), [posturas](webview-ui/tests/seating.test.mjs) e [inspetor](webview-ui/tests/taskInspector.test.mjs). A configuração de depuração está em [.vscode/launch.json](.vscode/launch.json), e a tarefa de build em [.vscode/tasks.json](.vscode/tasks.json).
+Tests include [backend](tests/backend.test.mjs), [rendering](webview-ui/tests/isometric.test.mjs), [seating](webview-ui/tests/seating.test.mjs), and [inspector](webview-ui/tests/taskInspector.test.mjs). Debugging uses [.vscode/launch.json](.vscode/launch.json) and the build task in [.vscode/tasks.json](.vscode/tasks.json).
 
 ---
 
-## Licença
+## License
 
-MIT — sprites pixel art baseados no [Pixel Agents](https://github.com/pablodelucca/pixel-agents) por [@pablodelucca](https://github.com/pablodelucca).
+MIT. Pixel-art sprites are based on [Pixel Agents](https://github.com/pablodelucca/pixel-agents) by [@pablodelucca](https://github.com/pablodelucca).
