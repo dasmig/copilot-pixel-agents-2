@@ -2,6 +2,15 @@
 
 > **Note on 0.4.x history:** versions 0.4.5–0.4.9 were packaged and distributed as `.vsix` files but their `package.json` version bumps were never committed to this repository, so their exact contents cannot be reconstructed from git history. The entry below for 0.4.10 has been reconstructed from the corresponding commits. Going forward, every published version is tagged and built by CI (see `.github/workflows/ci.yml`) so this gap cannot recur.
 
+## Unreleased
+
+### Added
+- Read-only browser visualization opened through **Show Pixel Office in Browser**, with
+  token-scoped loopback assets and live Server-Sent Events updates from the existing
+  in-memory agent store.
+- Shared extension-to-UI message mapping and regression tests for browser transport,
+  token protection, initial snapshots and live updates.
+
 ## [0.7.0] — 2026-09-14 (current)
 
 Project tooling and process, not runtime behavior — no user-facing changes to the

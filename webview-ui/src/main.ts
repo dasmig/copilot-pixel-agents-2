@@ -15,11 +15,11 @@ import {
 } from './engine.js';
 import type { Character } from './engine.js';
 import type { ClientMessage, ServerMessage } from './types.js';
+import { createHostTransport } from './hostTransport.js';
 import { outcomeLabel, renderTaskInspector } from './taskInspector.js';
 
-declare const acquireVsCodeApi: () => { postMessage: (msg: ClientMessage) => void };
-const vscode = acquireVsCodeApi();
-function post(msg: ClientMessage): void { vscode.postMessage(msg); }
+const host = createHostTransport();
+function post(msg: ClientMessage): void { host.post(msg); }
 let captureEnabled = false;
 
 // ─── Bootstrap ───────────────────────────────────────────────────────────────
@@ -58,9 +58,12 @@ document.addEventListener('DOMContentLoaded', () => {
   `;
   canvasWrap.appendChild(emptyOverlay);
 
-  document.getElementById('install-hooks-btn')?.addEventListener('click', () => {
-    post({ type: 'installHooks' });
-  });
+  const installHooksButton = document.getElementById('install-hooks-btn');
+  if (host.supportsCommands) {
+    installHooksButton?.addEventListener('click', () => post({ type: 'installHooks' }));
+  } else {
+    installHooksButton?.remove();
+  }
 
   // Bottom panel
   const bottomPanel = document.createElement('div');
@@ -155,27 +158,37 @@ document.addEventListener('DOMContentLoaded', () => {
   };
 
   // ── Message handler ──────────────────────────────────────────────────────
-  window.addEventListener('message', (event: MessageEvent<ServerMessage>) => {
-    const msg = event.data;
+  host.subscribe((msg: ServerMessage) => {
     switch (msg.type) {
       case 'serverPort':
         statusBar.textContent = `Hooks server → localhost:${msg.port}`;
         break;
 
       case 'existingAgents':
+        const snapshotIds = new Set(msg.agents.map((agent) => agent.id));
+        const selectedId = selectedChar(office)?.id;
+        for (const id of office.characters.keys()) {
+          if (!snapshotIds.has(id)) removeCharacter(office, id);
+        }
         for (const a of msg.agents) {
           addCharacter(office, a.id, a.name);
           const c = office.characters.get(a.id)!;
+          c.name = a.name;
           c.sessionStartedAt = a.sessionStartedAt ?? c.sessionStartedAt;
           c.inputTokens = a.inputTokens ?? 0;
           c.outputTokens = a.outputTokens ?? 0;
+          c.activeTools.clear();
           // Restore simulation independently of history, never replay old animations.
           for (const [toolId, tool] of a.activeTools ?? []) onToolStart(office, a.id, toolId, tool.name, tool.status);
           if (a.isWaiting) setWaiting(office, a.id);
+          else if ((a.activeTools?.length ?? 0) === 0) setIdle(office, a.id);
           syncHistory(office, a.id, a.toolHistory ?? []);
         }
         syncEmptyOverlay();
-        renderAgentsStrip(agentsStrip, office);
+        const selected = selectedId ? office.characters.get(selectedId) : undefined;
+        if (!selected && agentModal.style.display !== 'none') closeModal();
+        else if (selected && agentModal.style.display !== 'none') renderAgentModal(agentModal, selected, closeModal);
+        renderAgentsStrip(agentsStrip, office, selected?.id);
         break;
 
       case 'agentCreated':
@@ -364,7 +377,7 @@ function renderAgentModal(container: HTMLElement, char: Character, onClose: () =
     <div class="modal-active-tools">${activeHtml}</div>
     <div class="modal-section-title">History</div>
     <div class="history-hint">Select a task to inspect its input, output and events.</div>
-    <button type="button" class="capture-settings-link">${captureEnabled ? 'Payload capture on · Settings' : 'Payload capture off · Enable in Settings'}</button>
+    <button type="button" class="capture-settings-link" ${host.supportsCommands ? '' : 'disabled'}>${captureEnabled ? 'Payload capture on · Settings' : host.supportsCommands ? 'Payload capture off · Enable in Settings' : 'Payload capture off · Enable in VS Code'}</button>
     <div class="modal-history">${histHtml}</div>
   `;
 
@@ -372,7 +385,9 @@ function renderAgentModal(container: HTMLElement, char: Character, onClose: () =
     e.stopPropagation();
     onClose();
   });
-  container.querySelector('.capture-settings-link')?.addEventListener('click', () => post({ type: 'openCaptureSettings' }));
+  if (host.supportsCommands) {
+    container.querySelector('.capture-settings-link')?.addEventListener('click', () => post({ type: 'openCaptureSettings' }));
+  }
   for (const button of Array.from(container.querySelectorAll<HTMLButtonElement>('[data-entry-id]'))) {
     button.addEventListener('click', () => {
       container.dataset.taskId = button.dataset.entryId;

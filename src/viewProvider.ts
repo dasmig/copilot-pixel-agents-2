@@ -1,17 +1,23 @@
 import * as path from 'path';
 import * as vscode from 'vscode';
 import type { AgentStore } from './agentStore.js';
-import type { ClientMessage, ServerMessage, ToolStatus, ToolHistoryEntry } from './types.js';
+import { subscribeToAgentMessages } from './agentMessages.js';
+import type { ClientMessage, ServerMessage } from './types.js';
 
-export class PixelOfficeViewProvider implements vscode.WebviewViewProvider {
+export class PixelOfficeViewProvider implements vscode.WebviewViewProvider, vscode.Disposable {
   private view?: vscode.WebviewView;
+  private readonly unsubscribe: () => void;
 
   constructor(
     private readonly context: vscode.ExtensionContext,
     private readonly store: AgentStore,
     private readonly serverPort: number,
   ) {
-    this.bindStoreEvents();
+    this.unsubscribe = subscribeToAgentMessages(store, (message) => this.post(message));
+  }
+
+  dispose(): void {
+    this.unsubscribe();
   }
 
   resolveWebviewView(
@@ -55,33 +61,6 @@ export class PixelOfficeViewProvider implements vscode.WebviewViewProvider {
       case 'closeAgent':
         break;
     }
-  }
-
-  private bindStoreEvents(): void {
-    this.store.on('agentCreated', (agent: { id: string; name: string }) => {
-      this.post({ type: 'agentCreated', id: agent.id, name: agent.name });
-    });
-    this.store.on('agentRemoved', (id: string) => {
-      this.post({ type: 'agentRemoved', id });
-    });
-    this.store.on('agentToolStart', (id: string, toolId: string, toolName: string, status: ToolStatus, entry: ToolHistoryEntry) => {
-      this.post({ type: 'agentToolStart', id, toolId, toolName, status, entry });
-    });
-    this.store.on('agentToolDone', (id: string, toolId: string, entry: ToolHistoryEntry) => {
-      this.post({ type: 'agentToolDone', id, toolId, entry });
-    });
-    this.store.on('agentHistory', (id: string, history: ToolHistoryEntry[]) => {
-      this.post({ type: 'agentHistory', id, history });
-    });
-    this.store.on('captureSettings', (enabled: boolean) => {
-      this.post({ type: 'captureSettings', enabled });
-    });
-    this.store.on('agentStatus', (id: string, status: 'idle' | 'waiting' | 'active') => {
-      this.post({ type: 'agentStatus', id, status });
-    });
-    this.store.on('agentTokenUsage', (id: string, inputTokens: number, outputTokens: number) => {
-      this.post({ type: 'agentTokenUsage', id, inputTokens, outputTokens });
-    });
   }
 
   private sendExistingAgents(): void {

@@ -56,6 +56,11 @@
         "category": "Copilot Pixel Agents"
       },
       {
+        "command": "copilotPixelAgents.showInBrowser",
+        "title": "Show Pixel Office in Browser",
+        "category": "Copilot Pixel Agents"
+      },
+      {
         "command": "copilotPixelAgents.installHooks",
         "title": "Install Copilot Hooks",
         "category": "Copilot Pixel Agents"

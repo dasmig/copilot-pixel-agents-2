@@ -49,16 +49,20 @@ Agente (Copilot / Claude Code)
         ▼
  Script de hook ──POST──▶ Servidor local (127.0.0.1)
                                 │
-                                ▼
-                       Extensão VS Code
-                                │ postMessage
-                                ▼
-                       Canvas isométrico 2,5D
+           ┌──────────┴──────────┐
+           │                     │
+           ▼                     ▼
+         postMessage                SSE
+        Painel do VS Code     Navegador local
+           │                     │
+           └──────────┬──────────┘
+            ▼
+             Canvas isométrico 2,5D
 ```
 
 Cada sessão identificada pelos hooks vira um personagem. A primeira chamada de ferramenta também pode criar o personagem, mesmo sem um evento de início de sessão. As animações distinguem leitura, escrita, execução e pesquisa pelo nome da ferramenta.
 
-O servidor escuta somente em `127.0.0.1`, inicialmente na porta `7823`. Se ela estiver ocupada, tenta as portas seguintes e registra a porta efetiva para os hooks. A extensão visualiza eventos: selecionar um personagem não inicia, interrompe nem controla o agente de IA.
+O servidor escuta somente em `127.0.0.1`, inicialmente na porta `7823`. Se ela estiver ocupada, tenta as portas seguintes e registra a porta efetiva para os hooks. A mesma interface pode ser aberta no painel do VS Code ou no navegador local; selecionar um personagem não inicia, interrompe nem controla o agente de IA.
 
 ---
 
@@ -117,7 +121,7 @@ O instalador atual usa um único arquivo de definições por diretório e remove
 
 Após instalar os hooks:
 
-1. Abra **Copilot Pixel Agents → Pixel Office** na barra lateral ou execute **Copilot Pixel Agents: Show Pixel Office** na paleta de comandos
+1. Abra **Copilot Pixel Agents → Pixel Office** na barra lateral, execute **Copilot Pixel Agents: Show Pixel Office** ou use **Copilot Pixel Agents: Show Pixel Office in Browser** na paleta de comandos
 2. Inicie uma sessão de agente normalmente (Copilot em Agent Mode ou `claude` no terminal)
 3. Cada sessão aparece como um personagem no escritório virtual
 
@@ -218,7 +222,7 @@ O normalizador também reconhece `SubagentStart` e `SubagentStop`, além de vari
 
 Campos de conteúdo reconhecidos: `tool_input`/`toolInput`/`toolArgs`, `tool_response`/`toolResponse`/`tool_result`/`toolResult` e `error`/`tool_error`/`toolError`. O evento de falha, `success: false` e indicadores de erro da resposta são preservados mesmo com a captura desligada.
 
-Integrações próprias podem enviar JSON por **POST** à porta local ativa, usando `event` e `session_id`, mais os campos específicos definidos em [src/types.ts](src/types.ts). Use o mesmo `tool_id` para correlacionar início e fim de uma ferramenta. O servidor não oferece um endpoint GET de saúde; métodos diferentes de POST recebem HTTP 405.
+Integrações próprias podem enviar JSON por **POST** à porta local ativa, usando `event` e `session_id`, mais os campos específicos definidos em [src/types.ts](src/types.ts). Use o mesmo `tool_id` para correlacionar início e fim de uma ferramenta. Rotas GET existem somente sob o caminho aleatório criado para a visualização no navegador; a raiz continua reservada para os hooks.
 
 ---
 
@@ -229,6 +233,7 @@ Disponíveis na paleta de comandos, sob a categoria **Copilot Pixel Agents**:
 | Comando | Função |
 |---|---|
 | **Show Pixel Office** | Abre/foca a visão do escritório |
+| **Show Pixel Office in Browser** | Abre uma visualização local e somente leitura no navegador padrão |
 | **Install Copilot Hooks** | Instala ou atualiza os scripts e configura Copilot e Claude Code |
 | **Show Hooks Configuration** | Abre um documento informativo com caminhos de configuração |
 
@@ -266,7 +271,7 @@ O servidor tenta a próxima porta disponível automaticamente. O arquivo de port
 
 ### Diagnóstico e privacidade
 
-Os novos scripts não registram stdin, ambiente ou payloads em disco; o canal de saída registra apenas o tipo do evento e o tamanho, ou o status da rejeição. Logs legados podem conter dados privados e não são apagados automaticamente. **Revise qualquer conteúdo antes de compartilhá-lo, mesmo após o mascaramento do inspetor.** O servidor HTTP não tem autenticação e deve permanecer restrito ao loopback; não exponha sua porta na rede.
+Os novos scripts não registram stdin, ambiente ou payloads em disco; o canal de saída registra apenas o tipo do evento e o tamanho, ou o status da rejeição. Logs legados podem conter dados privados e não são apagados automaticamente. **Revise qualquer conteúdo antes de compartilhá-lo, mesmo após o mascaramento do inspetor.** O servidor permanece restrito ao loopback. A visualização no navegador usa um caminho aleatório renovado a cada ativação e não habilita CORS; o endpoint POST dos hooks continua sem autenticação. Não exponha a porta na rede nem compartilhe a URL da visualização.
 
 ---
 
@@ -297,11 +302,11 @@ Execute os comandos a partir da raiz do repositório:
 | `npm --prefix webview-ui run typecheck` | Verifica os tipos da webview |
 | `npx tsc --noEmit` | Verifica os tipos da extensão |
 
-Os testes cobrem projeção, enquadramento, zoom, arraste, seleção por profundidade, transições de postura, ocupação dos assentos, crescimento da sala, resize, renderização sem sprites, navegação do inspetor, conteúdo hostil, correlação de eventos, limite HTTP, mascaramento e limpeza ao desativar a captura, colisão entre agentes ociosos, atribuição de vagas de lazer, desvio de mobília pelo mascote e o histórico de ferramentas (`onToolDone`/`syncHistory`/liberação de assento ao remover um agente). Eles empacotam TypeScript em memória usando o esbuild da raiz; instale as dependências tanto da raiz quanto da webview.
+Os testes cobrem projeção, enquadramento, zoom, arraste, seleção por profundidade, transições de postura, ocupação dos assentos, crescimento da sala, resize, renderização sem sprites, navegação do inspetor, conteúdo hostil, correlação de eventos, limite HTTP, mascaramento e limpeza ao desativar a captura, transporte SSE protegido por token, colisão entre agentes ociosos, atribuição de vagas de lazer, desvio de mobília pelo mascote e o histórico de ferramentas (`onToolDone`/`syncHistory`/liberação de assento ao remover um agente). Eles empacotam TypeScript em memória usando o esbuild da raiz; instale as dependências tanto da raiz quanto da webview.
 
 Os testes de execução real dos scripts são opcionais localmente: informe o caminho do Python configurado em `PIXEL_TEST_PYTHON` ou do PowerShell em `PIXEL_TEST_PWSH` antes de executar `npm test`. Sem esses runtimes, somente esses casos são ignorados — eles usam um HOME temporário e um servidor de teste, sem alterar seus hooks instalados. Um desses testes roda a cadeia completa de verdade — script gerado → subprocesso real → handler HTTP real → `AgentStore` real — e não apenas um receptor simulado. O CI (`.github/workflows/ci.yml` e `release.yml`) detecta `python3`/`pwsh` automaticamente no runner e define essas variáveis, então esses testes deixam de ser pulados em qualquer push, PR ou release.
 
-A webview depende de `acquireVsCodeApi` e usa uma entrada TypeScript, sem página HTML independente de demonstração. Para validar no navegador fora do VS Code, é necessário um ambiente de prévia que simule essa API e as mensagens dos agentes.
+A entrada TypeScript seleciona automaticamente o transporte disponível: `acquireVsCodeApi` no painel ou Server-Sent Events na página servida pela extensão. O navegador continua dependendo do host da extensão para receber eventos e deixa de atualizar quando a janela do VS Code é encerrada.
 
 ### Empacotamento e publicação
 
@@ -323,6 +328,8 @@ copilot-pixel-agents/
 │   ├── extension.ts        # Entry point + prompt de instalação automática
 │   ├── hooksServer.ts      # HTTP server recebe eventos dos hooks
 │   ├── agentStore.ts       # Estado dos agentes em memória
+│   ├── agentMessages.ts    # Contrato compartilhado de atualizações da interface
+│   ├── browserOffice.ts    # Página local protegida e stream SSE
 │   ├── viewProvider.ts     # WebviewViewProvider
 │   ├── hooksInstaller.ts   # Gera scripts Unix/Windows e configura integrações
 │   ├── hookScripts.ts      # Transporte JSON com campos permitidos
@@ -337,6 +344,7 @@ copilot-pixel-agents/
 │   ├── seating.ts          # Poses e transições de sentar/levantar
 │   ├── history.ts          # Sincronização do histórico por invocação
 │   ├── taskInspector.ts    # Detalhe da tarefa e abas de payload
+│   ├── hostTransport.ts    # Transporte VS Code ou navegador
 │   ├── sprites.ts          # Carregamento de sprites
 │   ├── main.ts             # Bootstrap e handler de mensagens
 │   └── style.css

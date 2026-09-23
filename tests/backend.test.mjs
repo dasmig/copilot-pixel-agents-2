@@ -277,7 +277,7 @@ test('webviewReady and live contracts expose full snapshots, entries and capture
 
 test('extension reacts to configuration changes without reading installed hooks or chat logs', async (t) => {
   let enabled = false, changeConfig, provider;
-  const messages = [], writes = [];
+  const messages = [], writes = [], opened = [], registeredCommands = new Map();
   const config = { get: (key, fallback) => key === 'captureTaskDetails' ? enabled : fallback };
   const vscode = {
     workspace: {
@@ -289,8 +289,15 @@ test('extension reacts to configuration changes without reading installed hooks 
       registerWebviewViewProvider: (_id, instance) => { provider = instance; return { dispose() {} }; },
       showErrorMessage: (message) => assert.fail(message),
     },
-    commands: { registerCommand: () => ({ dispose() {} }), executeCommand() {} },
-    Uri: { joinPath: (...parts) => parts.join('/') },
+    commands: {
+      registerCommand: (name, callback) => {
+        registeredCommands.set(name, callback);
+        return { dispose() {} };
+      },
+      executeCommand() {},
+    },
+    env: { openExternal: (uri) => { opened.push(uri); } },
+    Uri: { joinPath: (...parts) => parts.join('/'), parse: (value) => value },
   };
   const http = {
     createServer: () => {
@@ -307,10 +314,12 @@ test('extension reacts to configuration changes without reading installed hooks 
     existsSync: () => assert.fail('activation must not scan unrelated files'),
   };
   const { activate } = load('extension.ts', { vscode, fs, os: { homedir: () => '/mock-home' }, http });
-  const context = { subscriptions: [], extensionUri: '/test', globalState: { get: () => true } };
+  const context = { subscriptions: [], extensionPath: '/test', extensionUri: '/test', globalState: { get: () => true } };
   t.after(() => context.subscriptions.forEach((subscription) => subscription.dispose()));
   await activate(context);
-  assert.deepEqual(writes, ['/mock-home/.copilot-pixel-agents/port']);
+  assert.deepEqual(writes, [join('/mock-home', '.copilot-pixel-agents', 'port')]);
+  registeredCommands.get('copilotPixelAgents.showInBrowser')();
+  assert.match(opened[0], /^http:\/\/127\.0\.0\.1:7823\/office\/[a-f0-9]{48}\/$/);
   provider.resolveWebviewView({ webview: { options: {}, asWebviewUri: (value) => value, postMessage: (message) => messages.push(message), onDidReceiveMessage() {}, cspSource: 'test' } });
   assert.equal(provider.store.captureTaskDetails, false);
   enabled = true;

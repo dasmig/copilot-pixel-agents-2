@@ -4,6 +4,7 @@ import * as os from 'os';
 import * as path from 'path';
 import type * as vscode from 'vscode';
 import type { AgentStore } from './agentStore.js';
+import { BrowserOfficeHost } from './browserOffice.js';
 import { createHookRequestHandler } from './hookHttp.js';
 
 const DEFAULT_PORT = 7823;
@@ -11,22 +12,32 @@ const DEFAULT_PORT = 7823;
 export class HooksServer {
   private server: http.Server | null = null;
   private port: number;
+  private readonly browserOffice: BrowserOfficeHost;
 
   constructor(
     private readonly store: AgentStore,
     private readonly channel: vscode.OutputChannel,
     port = DEFAULT_PORT,
+    webRoot: string,
   ) {
     this.port = port;
+    this.browserOffice = new BrowserOfficeHost(store, webRoot, () => this.port);
   }
 
   get activePort(): number {
     return this.port;
   }
 
+  get browserUrl(): string {
+    return this.browserOffice.url;
+  }
+
   start(): Promise<number> {
     return new Promise((resolve, reject) => {
-      this.server = http.createServer(createHookRequestHandler(this.store, (metadata) => this.channel.appendLine(metadata)));
+      const handleHook = createHookRequestHandler(this.store, (metadata) => this.channel.appendLine(metadata));
+      this.server = http.createServer((request, response) => {
+        if (!this.browserOffice.handle(request, response)) handleHook(request, response);
+      });
       this.server.requestTimeout = 10_000;
       this.server.headersTimeout = 10_000;
 
@@ -63,6 +74,7 @@ export class HooksServer {
   }
 
   stop(): void {
+    this.browserOffice.dispose();
     this.server?.close();
     this.server = null;
   }

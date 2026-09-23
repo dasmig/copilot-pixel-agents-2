@@ -23,7 +23,12 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       store.setCaptureTaskDetails(vscode.workspace.getConfiguration('copilotPixelAgents').get<boolean>('captureTaskDetails', false));
     }
   }));
-  const server = new HooksServer(store, channel, configuredPort);
+  const server = new HooksServer(
+    store,
+    channel,
+    configuredPort,
+    path.join(context.extensionPath, 'dist', 'webview'),
+  );
 
   let port: number;
   try {
@@ -35,6 +40,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   }
 
   const provider = new PixelOfficeViewProvider(context, store, port);
+  context.subscriptions.push(provider);
   context.subscriptions.push(
     vscode.window.registerWebviewViewProvider(VIEW_ID, provider, {
       webviewOptions: { retainContextWhenHidden: true },
@@ -44,6 +50,12 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   context.subscriptions.push(
     vscode.commands.registerCommand('copilotPixelAgents.showPanel', () => {
       vscode.commands.executeCommand(`${VIEW_ID}.focus`);
+    }),
+  );
+
+  context.subscriptions.push(
+    vscode.commands.registerCommand('copilotPixelAgents.showInBrowser', () => {
+      vscode.env.openExternal(vscode.Uri.parse(server.browserUrl));
     }),
   );
 
