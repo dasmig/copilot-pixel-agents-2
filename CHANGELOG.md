@@ -4,12 +4,16 @@
 
 ## Unreleased
 
+## [0.8.0] — 2026-09-23
+
 ### Added
 - Read-only browser visualization opened through **Show Pixel Office in Browser**, with
   token-scoped loopback assets and live Server-Sent Events updates from the existing
   in-memory agent store.
 - Shared extension-to-UI message mapping and regression tests for browser transport,
   token protection, initial snapshots and live updates.
+- English README with current browser, hook setup, privacy, troubleshooting, and fork
+  VSIX installation guidance.
 
 ### Fixed
 - Stationary coffee breaks and command execution no longer cycle walking frames.
@@ -24,7 +28,7 @@
 - Missing sprite assets report their registry keys and package version while retaining procedural
   fallbacks; CI and release builds check all registered assets in the production webview.
 
-## [0.7.0] — 2026-09-14 (current)
+## [0.7.0] — 2026-09-14
 
 Project tooling and process, not runtime behavior — no user-facing changes to the
 extension itself.
