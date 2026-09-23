@@ -4,6 +4,7 @@
 //   Left direction is drawn by horizontally flipping the right row.
 
 import { seatingGeometry, type SeatKind } from './seating.js';
+import { version } from '../package.json';
 
 const CHAR_FRAME_W = 16;
 const CHAR_FRAME_H = 32;
@@ -16,6 +17,30 @@ const DIR_ROW: Record<Direction, number> = { down: 0, up: 1, right: 2, left: 2 }
 const characterImages: HTMLImageElement[] = [];
 const furnitureImages: Map<string, HTMLImageElement> = new Map();
 let floorImages: HTMLImageElement[] = [];
+
+export const ASSET_PATHS = {
+  characters: Array.from({ length: 6 }, (_, index) => `characters/char_${index}.png`),
+  floors: Array.from({ length: 3 }, (_, index) => `floors/floor_${index}.png`),
+  furniture: [
+    ['desk_front', 'furniture/DESK/DESK_FRONT.png'],
+    ['desk_side', 'furniture/DESK/DESK_SIDE.png'],
+    ['chair_front', 'furniture/CUSHIONED_CHAIR/CUSHIONED_CHAIR_FRONT.png'],
+    ['chair_back', 'furniture/CUSHIONED_CHAIR/CUSHIONED_CHAIR_BACK.png'],
+    ['pc_off', 'furniture/PC/PC_FRONT_OFF.png'],
+    ['pc_on_1', 'furniture/PC/PC_FRONT_ON_1.png'],
+    ['pc_on_2', 'furniture/PC/PC_FRONT_ON_2.png'],
+    ['pc_on_3', 'furniture/PC/PC_FRONT_ON_3.png'],
+  ],
+};
+type AssetStatus = 'loaded' | 'failed' | 'missing';
+const assetStatus = new Map<string, AssetStatus>(
+  [...ASSET_PATHS.characters, ...ASSET_PATHS.floors, ...ASSET_PATHS.furniture.map(([, path]) => path)]
+    .map((path) => [path, 'missing']),
+);
+
+export function getAssetStatus(): ReadonlyMap<string, AssetStatus> {
+  return new Map(assetStatus);
+}
 
 declare const window: Window & { ASSETS_BASE_URI?: string };
 
@@ -31,55 +56,39 @@ export function getSpritesLoaded(): boolean {
   return loaded;
 }
 
+function registerImage(image: HTMLImageElement, path: string, promises: Promise<void>[]): void {
+  promises.push(new Promise<void>((resolve) => {
+    const finish = (status: AssetStatus) => {
+      assetStatus.set(path, status);
+      if (status !== 'loaded') console.warn(`[Copilot Pixel Agents] Asset ${path} ${status} (v${version})`);
+      resolve();
+    };
+    image.onload = () => finish(image.naturalWidth > 0 ? 'loaded' : 'missing');
+    image.onerror = () => finish('failed');
+  }));
+  image.src = assetUrl(path);
+}
+
 export function loadSprites(): Promise<void> {
   if (loadPromise) return loadPromise;
 
   const promises: Promise<void>[] = [];
 
-  for (let i = 0; i < 6; i++) {
+  for (const path of ASSET_PATHS.characters) {
     const img = new Image();
-    promises.push(
-      new Promise<void>((res) => {
-        img.onload = () => res();
-        img.onerror = () => res(); // fallback: skip
-      }),
-    );
-    img.src = assetUrl(`characters/char_${i}.png`);
+    registerImage(img, path, promises);
     characterImages.push(img);
   }
 
-  for (let i = 0; i < 3; i++) {
+  for (const path of ASSET_PATHS.floors) {
     const img = new Image();
-    promises.push(
-      new Promise<void>((res) => {
-        img.onload = () => res();
-        img.onerror = () => res();
-      }),
-    );
-    img.src = assetUrl(`floors/floor_${i}.png`);
+    registerImage(img, path, promises);
     floorImages.push(img);
   }
 
-  const furnitureFiles = [
-    ['desk_front', 'furniture/DESK/DESK_FRONT.png'],
-    ['desk_side', 'furniture/DESK/DESK_SIDE.png'],
-    ['chair_front', 'furniture/CUSHIONED_CHAIR/CUSHIONED_CHAIR_FRONT.png'],
-    ['chair_back', 'furniture/CUSHIONED_CHAIR/CUSHIONED_CHAIR_BACK.png'],
-    ['pc_off', 'furniture/PC/PC_FRONT_OFF.png'],
-    ['pc_on_1', 'furniture/PC/PC_FRONT_ON_1.png'],
-    ['pc_on_2', 'furniture/PC/PC_FRONT_ON_2.png'],
-    ['pc_on_3', 'furniture/PC/PC_FRONT_ON_3.png'],
-  ];
-
-  for (const [key, src] of furnitureFiles) {
+  for (const [key, path] of ASSET_PATHS.furniture) {
     const img = new Image();
-    promises.push(
-      new Promise<void>((res) => {
-        img.onload = () => res();
-        img.onerror = () => res();
-      }),
-    );
-    img.src = assetUrl(src);
+    registerImage(img, path, promises);
     furnitureImages.set(key, img);
   }
 

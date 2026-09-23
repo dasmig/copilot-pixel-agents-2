@@ -132,13 +132,14 @@ test('new work reserves the couch while rising, walks only upright, then sits at
 });
 
 test('leisure expiry rises before departure; walking arrival begins sitting only on seat', () => {
-  const { c, tick, atLeisure } = fixture();
+  const { office, c, tick, atLeisure } = fixture();
   const spot = atLeisure('tv');
   c.x -= 7; c.activity = 'walking';
   tick(); assert.equal(c.sitProgress, 0);
   tick(); assert.equal(c.activity, 'watching_tv'); assert.ok(c.sitProgress > 0);
   tick(); tick();
   c.leisureTimer = 1;
+  c.leisureExpiresAt = office.elapsedTime + 1;
   tick(); assert.equal(c.activity, 'walking'); assert.equal(c.x, spot.standX);
   tick(); tick(); assert.equal(c.sitProgress, 0); assert.equal(c.x, spot.standX);
   tick(); assert.notEqual(c.x, spot.standX);

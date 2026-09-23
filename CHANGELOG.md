@@ -11,6 +11,19 @@
 - Shared extension-to-UI message mapping and regression tests for browser transport,
   token protection, initial snapshots and live updates.
 
+### Fixed
+- Stationary coffee breaks and command execution no longer cycle walking frames.
+- Character transitions now reconcile tool, waiting, leisure and snapshot state in one
+  controller, so fast tool events and interrupted travel resolve to the current intent.
+- Speech bubbles and leisure sessions expire on elapsed-time deadlines after hidden-tab pauses
+  without fast-forwarding movement; ownership prevents stale tool bubbles from returning.
+- Capacity-aware leisure reservations and grid routes avoid furniture, reject contested or
+  unreachable destinations, and replan when the logical office layout changes.
+- Browser connection feedback distinguishes reconnecting and disconnected scenes until an
+  authoritative snapshot arrives; the VS Code panel retains its existing status bar behavior.
+- Missing sprite assets report their registry keys and package version while retaining procedural
+  fallbacks; CI and release builds check all registered assets in the production webview.
+
 ## [0.7.0] — 2026-09-14 (current)
 
 Project tooling and process, not runtime behavior — no user-facing changes to the
