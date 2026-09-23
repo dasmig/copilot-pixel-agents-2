@@ -146,6 +146,7 @@ export function drawSeatedCharacterSprite(
   progress: number,
   kind: SeatKind | null,
   animateHands: boolean,
+  useMouse = false,
 ): void {
   const { amount, drop } = seatingGeometry(progress);
   const img = characterImages[paletteIndex % characterImages.length];
@@ -199,7 +200,12 @@ export function drawSeatedCharacterSprite(
   ctx.fillRect(9, 17, 3, 6);
   ctx.fillStyle = skin;
   ctx.fillRect(10, handY + tap, 7, 2);
-  ctx.fillRect(13, handY - 2 + (animateHands ? 1 - tap : 0), 5, 2);
+  if (working && useMouse && progress >= 1) {
+    ctx.fillRect(13, 19, 9, 2);
+    ctx.fillRect(19, 21, 3, 2);
+  } else {
+    ctx.fillRect(13, handY - 2 + (animateHands ? 1 - tap : 0), 5, 2);
+  }
   if (kind === 'gaming') {
     ctx.fillStyle = '#263447';
     ctx.fillRect(13, 21, 7, 3);

@@ -27,6 +27,7 @@ function fixture(count = 1) {
   const handlers = new Map();
   const captures = new Set();
   const calls = [];
+  const painted = [];
   const ctx = new Proxy({
     measureText: (text) => ({ width: text.length * 5 }),
   }, {
@@ -34,6 +35,7 @@ function fixture(count = 1) {
       return key in target ? target[key] : (...args) => {
         for (const value of args) if (typeof value === 'number') assert.ok(Number.isFinite(value), `${String(key)}: finite coordinates`);
         calls.push([key, ...args]);
+        if (key === 'fill') painted.push(target.fillStyle);
       };
     },
   });
@@ -53,7 +55,7 @@ function fixture(count = 1) {
   const office = engine.createOffice(canvas);
   for (let i = 0; i < count; i++) engine.addCharacter(office, `agent-${i}`, `Agent ${i}`);
   const emit = (name, event = {}) => handlers.get(name)?.forEach((fn) => fn({ pointerId: 1, button: 0, isPrimary: true, ...event }));
-  return { office, canvas, calls, emit };
+  return { office, canvas, calls, painted, emit };
 }
 
 test('projection keeps height upright and produces a 2:1 diamond', () => {
@@ -160,6 +162,97 @@ test('document page turns pause when reduced motion is requested', () => {
     calls.length = 0;
     engine.renderIsometric(office);
     assert.equal(hasTurningPage(), false);
+  } finally {
+    motionPreference.matches = false;
+  }
+});
+
+test('writing highlights a key at the desk while reading does not', () => {
+  const { office, calls } = fixture();
+  const editor = office.characters.get('agent-0');
+  const key = engine.project(editor.deskX + 2, editor.deskY + 13, 24);
+  const highlighted = () => calls.some(([method, x, y, width, height]) =>
+    method === 'fillRect' && x === key.x && y === key.y && width === 2 && height === 1);
+
+  engine.onToolStart(office, editor.id, 'edit', 'edit_file', 'writing');
+  engine.renderIsometric(office);
+  assert.equal(highlighted(), true);
+
+  calls.length = 0;
+  engine.onToolDone(office, editor.id, 'edit');
+  engine.onToolStart(office, editor.id, 'read', 'read_file', 'reading');
+  engine.renderIsometric(office);
+  assert.equal(highlighted(), false);
+});
+
+test('writing monitor cycles through three abstract layouts without displaying tool contents', () => {
+  const { office, painted } = fixture();
+  const editor = office.characters.get('agent-0');
+  engine.onToolStart(office, editor.id, 'edit', 'edit_file', 'writing');
+  const frames = [];
+  for (const time of [0, 1600, 3200]) {
+    painted.length = 0;
+    office.elapsedTime = time;
+    engine.renderIsometric(office);
+    frames.push(painted.filter((color) => color === '#93d8c4' || color === '#f2cc8f' || color === '#e8b7b7'));
+  }
+
+  assert.equal(new Set(frames.map((colors) => colors.join(','))).size, 3);
+});
+
+test('two writing agents use different monitor layouts at the same time', () => {
+  const { office, painted } = fixture(2);
+  for (const editor of office.characters.values()) {
+    engine.onToolStart(office, editor.id, `edit-${editor.id}`, 'edit_file', 'writing');
+  }
+
+  engine.renderIsometric(office);
+
+  assert.ok(painted.includes('#93d8c4'));
+  assert.ok(painted.includes('#e8b7b7'));
+});
+
+test('seated writing agent briefly reaches for the mouse instead of typing', () => {
+  const { office, calls } = fixture();
+  const editor = office.characters.get('agent-0');
+  engine.onToolStart(office, editor.id, 'edit', 'edit_file', 'writing');
+  editor.sitProgress = 1;
+  editor.seatKind = 'desk';
+  const mouseReach = () => calls.some(([method, x, y, width, height]) =>
+    method === 'fillRect' && x === 13 && y === 19 && width === 9 && height === 2);
+
+  office.elapsedTime = 0;
+  engine.renderIsometric(office);
+  assert.equal(mouseReach(), false);
+
+  calls.length = 0;
+  office.elapsedTime = 2000;
+  engine.renderIsometric(office);
+  assert.equal(mouseReach(), true);
+});
+
+test('reduced motion freezes writing monitor layout and suppresses the mouse gesture', () => {
+  const { office, calls, painted } = fixture();
+  const editor = office.characters.get('agent-0');
+  engine.onToolStart(office, editor.id, 'edit', 'edit_file', 'writing');
+  editor.sitProgress = 1;
+  editor.seatKind = 'desk';
+  const colors = ['#93d8c4', '#f2cc8f', '#e8b7b7'];
+
+  try {
+    motionPreference.matches = true;
+    office.elapsedTime = 0;
+    engine.renderIsometric(office);
+    const firstLayout = painted.filter((color) => colors.includes(color));
+
+    calls.length = 0;
+    painted.length = 0;
+    office.elapsedTime = 2000;
+    engine.renderIsometric(office);
+
+    assert.deepEqual(painted.filter((color) => colors.includes(color)), firstLayout);
+    assert.equal(calls.some(([method, x, y, width, height]) =>
+      method === 'fillRect' && x === 13 && y === 19 && width === 9 && height === 2), false);
   } finally {
     motionPreference.matches = false;
   }

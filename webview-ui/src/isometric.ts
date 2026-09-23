@@ -117,12 +117,21 @@ function plant(ctx: CanvasRenderingContext2D, x: number, y: number): void {
   }
 }
 
-function screen(ctx: CanvasRenderingContext2D, x: number, y: number, width: number, z: number, active: boolean, t: number): void {
+function screen(ctx: CanvasRenderingContext2D, x: number, y: number, width: number, z: number,
+  active: boolean, t: number, writingMode?: number): void {
   box(ctx, x + width * 0.4, y, width * 0.2, 5, 2, DARK, z);
   box(ctx, x + width * 0.48, y + 1, 2, 2, 6, DARK, z + 2);
   box(ctx, x, y, width, 3, 17, DARK, z + 7);
   front(ctx, x + 1, y + 3.1, width - 2, z + 9, 13, active ? '#223a55' : '#263849');
-  if (active) {
+  if (active && writingMode !== undefined) {
+    const colors = ['#93d8c4', '#f2cc8f', '#e8b7b7'];
+    front(ctx, x + 2, y + 3.2, width - 4, z + 20, 10, '#223a55');
+    for (let line = 0; line < 3; line++) {
+      const left = writingMode === 1 && line === 1 ? 8 : 4;
+      const length = writingMode === 0 ? 7 + line * 3 : writingMode === 1 ? 12 - line * 2 : 4 + line * 4;
+      front(ctx, x + left, y + 3.3, length, z + 11 + line * 3, 1, colors[writingMode]);
+    }
+  } else if (active) {
     const colors = ['#a6d8c0', '#baadf2', '#8fcbe6', '#e5bc87'];
     for (let i = 0; i < 4; i++) {
       front(ctx, x + 3 + (i % 2) * 2, y + 3.2, 5 + ((i + Math.floor(t / 500)) % 3) * 3,
@@ -133,7 +142,11 @@ function screen(ctx: CanvasRenderingContext2D, x: number, y: number, width: numb
   }
 }
 
-function workstation(ctx: CanvasRenderingContext2D, x: number, y: number, active: boolean, accent: string, t: number): void {
+function workstation(ctx: CanvasRenderingContext2D, x: number, y: number, active: boolean,
+  accent: string, t: number, writer?: Character): void {
+  const writing = writer?.activity === 'typing' && writer.motion === 'stationary';
+  const offset = writer ? [...writer.id].reduce((value, letter) => value + letter.charCodeAt(0), 0) : 0;
+  const mode = writing ? (reducedMotion?.matches ? offset : Math.floor(t / 1600) + offset) % 3 : undefined;
   shadow(ctx, x - 16, y - 5, 47, 29);
   // Open space under the desk makes the tabletop height immediately readable.
   for (const [dx, dy] of [[-14, -3], [25, -3], [-14, 15], [25, 15]]) {
@@ -141,9 +154,14 @@ function workstation(ctx: CanvasRenderingContext2D, x: number, y: number, active
   }
   box(ctx, x - 17, y - 6, 48, 27, 3, WOOD, 18);
   plane(ctx, x - 15, y - 4, 44, 1, 21.1, '#ecd2a8');
-  screen(ctx, x - 4, y - 3, 23, 21, active, t);
+  screen(ctx, x - 4, y - 3, 23, 21, active, t, mode);
   box(ctx, x - 3, y + 11, 19, 6, 1, ['#94a5b2', '#586c80', '#72879a'], 21);
   for (let i = 0; i < 5; i++) plane(ctx, x - 1 + i * 3, y + 12, 2, 3, 22.1, '#cfdbde');
+  if (writing) {
+    const key = project(x + 2, y + 13, 24);
+    ctx.fillStyle = '#c6e9cf';
+    ctx.fillRect(key.x, key.y, 2, 1);
+  }
   box(ctx, x + 23, y + 8, 4, 4, 5, ['#fbebd0', '#c6b393', '#dfcfb0'], 21);
   plane(ctx, x + 24, y + 9, 2, 2, 26.1, '#916c54');
   plane(ctx, x - 14, y + 4, 8, 10, 21.1, '#eee9d7');
@@ -308,8 +326,11 @@ function heldCoffee(ctx: CanvasRenderingContext2D, c: Character, anchor: Point, 
 function character(ctx: CanvasRenderingContext2D, c: Character, elapsedTime: number): void {
   const p = characterPose(c).anchor;
   if (c.sitProgress > 0) {
+    const offset = [...c.id].reduce((value, letter) => value + letter.charCodeAt(0), 0);
+    const phase = (elapsedTime + offset * 73) % 4800;
+    const useMouse = c.activity === 'typing' && !reducedMotion?.matches && phase >= 4000 && phase < 4700;
     drawSeatedCharacterSprite(ctx, c.palette, c.frame, p.x - 8, p.y - 32,
-      c.sitProgress, c.seatKind, c.activity === 'typing' || c.activity === 'gaming');
+      c.sitProgress, c.seatKind, c.activity === 'typing' || c.activity === 'gaming', useMouse);
   } else if (!drawCharacterSprite(ctx, c.palette, c.direction, c.frame, p.x - 8, p.y - 32)) {
     ctx.fillStyle = COLORS[c.palette % COLORS.length];
     ctx.fillRect(p.x - 5, p.y - 20, 10, 17);
@@ -414,7 +435,8 @@ export function renderIsometric(office: Office): void {
     const x = c?.deskX ?? (3 + i % 2 * 5) * 16;
     const y = c?.deskY ?? (4 + Math.floor(i / 2) * 4) * 16;
     const accent = COLORS[c?.palette ?? i];
-    items.push({ depth: x + y + 18, draw: () => workstation(ctx, x, y, !!c?.activeTools.size, accent, office.elapsedTime) });
+    items.push({ depth: x + y + 18, draw: () => workstation(ctx, x, y,
+      !!c?.activeTools.size, accent, office.elapsedTime, c) });
     shadow(ctx, x + 1, y + 24, 14, 13);
     items.push({ depth: x + y + 35, draw: () => chairBase(ctx, x + 1, y + 24, accent) });
     items.push({ depth: x + y + 44, draw: () => chairBack(ctx, x + 1, y + 24, accent) });
