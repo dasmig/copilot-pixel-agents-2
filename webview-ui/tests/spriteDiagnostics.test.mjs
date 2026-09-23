@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { build } from 'esbuild';
 import { fileURLToPath } from 'node:url';
+import packageJson from '../package.json' with { type: 'json' };
 
 test('missing character sprite reports a fixed asset key while fallback stays available', async () => {
   const bundle = await build({
@@ -28,7 +29,7 @@ test('missing character sprite reports a fixed asset key while fallback stays av
     const sprites = await import(`data:text/javascript;base64,${Buffer.from(bundle.outputFiles[0].text).toString('base64')}`);
     await sprites.loadSprites();
     assert.equal(sprites.getAssetStatus().get('characters/char_0.png'), 'failed');
-    assert.match(warnings.join('\n'), /characters\/char_0\.png.*0\.7\.0/);
+    assert.ok(warnings.some((message) => message.includes(`Asset characters/char_0.png failed (v${packageJson.version})`)));
     assert.equal(sprites.drawCharacterSprite({}, 0, 'down', 0, 0, 0), false);
   } finally {
     globalThis.Image = previousImage;
