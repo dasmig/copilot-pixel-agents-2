@@ -15,7 +15,7 @@ it writes hook scripts and configuration under the user's home directory:
 - `~/.vscode/agent-hooks.json` and `~/.claude/settings.json` (hook registration)
 - `~/.copilot/hooks/` (Copilot user-level hooks directory)
 
-The HTTP handler only accepts `POST` requests, enforces a body size limit
+The hook endpoint only accepts `POST` requests, enforces a body size limit
 (`MAX_HTTP_BODY_BYTES`, see `src/hookPayload.ts`), and validates/normalizes every field
 against an allowlist (`normalizeHookEvent`) before it reaches application state — it never
 spreads or trusts arbitrary incoming JSON. Tool inputs/outputs are only retained in memory
@@ -23,6 +23,12 @@ when the opt-in `copilotPixelAgents.captureTaskDetails` setting is enabled (off 
 default), go through best-effort secret redaction, and are never persisted to disk or
 logged; enabling it can still surface source code or sensitive data pulled from your own
 tool calls into the in-memory task inspector, so treat it accordingly.
+
+The optional browser view is served from the same loopback listener under a random,
+per-activation capability path. Static assets and the Server-Sent Events stream require
+that path, responses do not enable CORS, and the browser view is read-only. The hook POST
+endpoint remains unauthenticated, so the listener must never be exposed beyond loopback.
+Do not share the browser URL because it can display any task details retained in memory.
 
 ## Reporting a vulnerability
 

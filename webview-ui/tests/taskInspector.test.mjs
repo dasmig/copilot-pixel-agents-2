@@ -131,6 +131,25 @@ test('snapshot restores up to 50 entries and metadata before opening the inspect
   assert.match(doc.querySelector('.modal-stats').textContent, /1.0k/);
 });
 
+test('reconnect snapshot removes stale agents and active tools', async (t) => {
+  const { doc, send, click } = await fixture(t);
+  start(send, entry());
+  send({ type: 'agentCreated', id: 'stale', name: 'Stale Agent' });
+  assert.equal(doc.querySelectorAll('.agent-chip').length, 2);
+
+  send({ type: 'existingAgents', agents: [{
+    id: 'a', name: 'Reconnected Agent', sessionStartedAt: 1700000000000,
+    inputTokens: 0, outputTokens: 0, isWaiting: false, activeTools: [],
+    toolHistory: [entry({ outcome: 'completed', finishedAt: 1700000000100 })],
+  }] });
+  click('.agent-chip');
+
+  assert.equal(doc.querySelectorAll('.agent-chip').length, 1);
+  assert.equal(doc.querySelector('.modal-name').textContent, 'Reconnected Agent');
+  assert.match(doc.querySelector('.modal-active-tools').textContent, /—/);
+  assert.match(doc.querySelector('.modal-history').textContent, /Completed/);
+});
+
 test('tabs work with keyboard, preserve focus on updates, and switching agents resets the task', async (t) => {
   const { doc, window, send, inspect, click } = await fixture(t);
   start(send, entry()); inspect();
