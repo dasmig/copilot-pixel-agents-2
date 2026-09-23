@@ -389,6 +389,173 @@ test('layout rebuild drops a stale standing reservation without stealing a seate
   assert.equal(office.leisureSpots.find((spot) => spot.type === 'coffee').occupant, null);
 });
 
+test('the pet approaches a nearby stationary agent instead of wandering away', () => {
+  const { office, tick } = fixture();
+  const character = office.characters.get('agent-0');
+  character.x = character.targetX = 120;
+  character.y = character.targetY = 80;
+  character.idleTimer = 1e9;
+  office.pet.x = office.pet.targetX = 80;
+  office.pet.y = office.pet.targetY = 80;
+  office.pet.sitTimer = 0;
+
+  const originalRandom = Math.random;
+  Math.random = () => 0.1;
+  try {
+    for (let step = 0; step < 20; step++) tick();
+  } finally {
+    Math.random = originalRandom;
+  }
+
+  assert.ok(office.pet.x > 80,
+    `pet moves toward the nearby agent: ${JSON.stringify({ x: office.pet.x, y: office.pet.y, behavior: office.pet.behavior, targetX: office.pet.targetX })}`);
+});
+
+test('the pet settles into a nap without moving', () => {
+  const { office, tick } = fixture();
+  office.pet.sitTimer = 0;
+
+  withRandomQueue(Array(10).fill(0.5), () => tick());
+
+  assert.deepEqual({ behavior: office.pet.behavior, sitting: office.pet.isSitting, x: office.pet.x },
+    { behavior: 'nap', sitting: true, x: 80 });
+});
+
+test('the pet grooms while staying in place', () => {
+  const { office, tick } = fixture();
+  office.pet.sitTimer = 0;
+
+  withRandomQueue(Array(10).fill(0.75), () => tick());
+
+  assert.deepEqual({ behavior: office.pet.behavior, sitting: office.pet.isSitting, x: office.pet.x },
+    { behavior: 'groom', sitting: true, x: 80 });
+});
+
+test('the pet returns to rest when a stationary activity expires', () => {
+  for (const activity of [0.5, 0.75]) {
+    const { office, tick } = fixture();
+    office.pet.sitTimer = 0;
+    withRandomQueue(Array(10).fill(activity), () => tick());
+    office.pet.sitTimer = 50;
+
+    withRandomQueue(Array(10).fill(0.5), () => tick());
+
+    assert.equal(office.pet.behavior, 'rest');
+  }
+});
+
+test('the pet abandons following when its agent disappears', () => {
+  const { office, tick } = fixture();
+  const character = office.characters.get('agent-0');
+  character.x = character.targetX = 120;
+  character.y = character.targetY = 80;
+  character.idleTimer = 1e9;
+  office.pet.sitTimer = 0;
+  withRandomQueue(Array(10).fill(0.1), () => tick());
+  engine.removeCharacter(office, character.id);
+
+  withRandomQueue(Array(10).fill(0.5), () => tick());
+
+  assert.deepEqual({ behavior: office.pet.behavior, target: office.pet.followTargetId },
+    { behavior: 'rest', target: null });
+});
+
+test('following routes around a workstation without crossing its footprint', () => {
+  const { office, tick } = fixture();
+  const character = office.characters.get('agent-0');
+  character.x = character.targetX = 174;
+  character.y = character.targetY = 80;
+  character.idleTimer = 1e9;
+  office.pet.x = office.pet.targetX = 96;
+  office.pet.y = office.pet.targetY = 64;
+  office.pet.sitTimer = 0;
+  const desk = { x: 111, y: 58, w: 48, h: 27 };
+
+  const originalRandom = Math.random;
+  Math.random = () => 0.1;
+  try {
+    for (let step = 0; step < 40; step++) {
+      tick();
+      assert.equal(office.pet.x + 12 > desk.x && office.pet.x < desk.x + desk.w
+        && office.pet.y + 16 > desk.y && office.pet.y < desk.y + desk.h, false);
+    }
+  } finally {
+    Math.random = originalRandom;
+  }
+  assert.ok(office.pet.x > 110, 'pet progresses to the other side of the workstation');
+});
+
+test('the pet replans its follow route when the agent moves', () => {
+  const { office, tick } = fixture();
+  const character = office.characters.get('agent-0');
+  character.x = character.targetX = 120;
+  character.y = character.targetY = 80;
+  character.idleTimer = 1e9;
+  office.pet.sitTimer = 0;
+  const originalRandom = Math.random;
+  Math.random = () => 0.1;
+  try {
+    tick();
+    const previousTarget = { x: office.pet.targetX, y: office.pet.targetY };
+    character.x = character.targetX = 160;
+    character.y = character.targetY = 112;
+    for (let step = 0; step < 6; step++) tick();
+
+    assert.notDeepEqual({ x: office.pet.targetX, y: office.pet.targetY }, previousTarget);
+  } finally {
+    Math.random = originalRandom;
+  }
+});
+
+test('following ends after its full five-second duration', () => {
+  const { office, tick } = fixture();
+  const character = office.characters.get('agent-0');
+  character.x = character.targetX = 120;
+  character.y = character.targetY = 80;
+  character.idleTimer = 1e9;
+  office.pet.sitTimer = 0;
+  const originalRandom = Math.random;
+  Math.random = () => 0.1;
+  try {
+    tick();
+    for (let step = 0; step < 47; step++) tick();
+    assert.equal(office.pet.behavior, 'follow');
+    for (let step = 0; step < 3; step++) tick();
+    assert.equal(office.pet.behavior, 'rest');
+  } finally {
+    Math.random = originalRandom;
+  }
+});
+
+test('following avoids a second character standing between the pet and its target', () => {
+  const { office, tick } = fixture(2);
+  const target = office.characters.get('agent-0');
+  const bystander = office.characters.get('agent-1');
+  target.x = target.targetX = 160;
+  target.y = target.targetY = 128;
+  bystander.x = bystander.targetX = 200;
+  bystander.y = bystander.targetY = 200;
+  target.idleTimer = bystander.idleTimer = 1e9;
+  office.pet.x = office.pet.targetX = 80;
+  office.pet.y = office.pet.targetY = 128;
+  office.pet.sitTimer = 0;
+  const originalRandom = Math.random;
+  Math.random = () => 0.1;
+  try {
+    tick();
+    bystander.x = bystander.targetX = 112;
+    bystander.y = bystander.targetY = 128;
+    for (let step = 0; step < 35; step++) {
+      tick();
+      assert.ok(Math.hypot(office.pet.x - bystander.x, office.pet.y - bystander.y) >= 20,
+        'pet keeps its distance from the bystander while following');
+    }
+    assert.ok(office.pet.x > 96, 'pet reaches the other side of the bystander');
+  } finally {
+    Math.random = originalRandom;
+  }
+});
+
 test('the pet stops before stepping into furniture instead of clipping through it', () => {
   const { office, tick } = fixture(1);
   const gaming = office.leisureSpots.find((s) => s.type === 'gaming');

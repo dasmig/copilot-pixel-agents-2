@@ -4,6 +4,9 @@
 
 ## Unreleased
 
+### Added
+- The pet can briefly follow a nearby agent using furniture-aware routes, nap, and groom; it returns to rest if its follow target disappears or becomes unreachable.
+
 ## [0.8.0] — 2026-09-23
 
 ### Added

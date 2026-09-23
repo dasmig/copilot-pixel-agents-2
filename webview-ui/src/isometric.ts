@@ -322,7 +322,8 @@ function cat(ctx: CanvasRenderingContext2D, office: Office): void {
   ctx.save();
   ctx.translate(Math.round(p.x), Math.round(p.y));
   if (office.pet.direction === 'left') ctx.scale(-1, 1);
-  ctx.fillStyle = office.pet.color === 'orange' ? '#d69b60' : '#97a5b6';
+  const furColor = office.pet.color === 'orange' ? '#d69b60' : '#97a5b6';
+  ctx.fillStyle = furColor;
   ctx.fillRect(-5, -8, 10, 7);
   ctx.fillRect(0, -13, 8, 7);
   ctx.fillRect(0, -16, 2, 4); ctx.fillRect(6, -16, 2, 4);
@@ -330,7 +331,16 @@ function cat(ctx: CanvasRenderingContext2D, office: Office): void {
   const step = office.pet.isSitting ? 0 : office.pet.frame;
   ctx.fillRect(-4, -2, 2, 2 + step); ctx.fillRect(3, -2, 2, 3 - step);
   ctx.fillStyle = '#ffe1b0'; ctx.fillRect(1, -8, 5, 3);
-  ctx.fillStyle = '#344e59'; ctx.fillRect(1, -11, 1, 2); ctx.fillRect(6, -11, 1, 2);
+  ctx.fillStyle = '#344e59';
+  if (office.pet.behavior === 'nap') {
+    ctx.fillRect(1, -10, 2, 1); ctx.fillRect(6, -10, 2, 1);
+  } else {
+    ctx.fillRect(1, -11, 1, 2); ctx.fillRect(6, -11, 1, 2);
+  }
+  if (office.pet.behavior === 'groom') {
+    ctx.fillStyle = furColor;
+    ctx.fillRect(1 + office.pet.frame, -12, 3, 4);
+  }
   ctx.restore();
 }
 
