@@ -60,6 +60,25 @@ test('projection keeps height upright and produces a 2:1 diamond', () => {
   assert.deepEqual(engine.project(16, 16, 12), { x: 0, y: 4 });
 });
 
+test('napping pet has closed eyes', () => {
+  const { office, calls } = fixture(0);
+  office.pet.behavior = 'nap';
+
+  engine.renderIsometric(office);
+
+  assert.ok(calls.some((call) => JSON.stringify(call) === JSON.stringify(['fillRect', 1, -10, 2, 1])));
+});
+
+test('grooming pet raises a paw toward its face', () => {
+  const { office, calls } = fixture(0);
+  office.pet.behavior = 'groom';
+  office.pet.frame = 1;
+
+  engine.renderIsometric(office);
+
+  assert.ok(calls.some((call) => JSON.stringify(call) === JSON.stringify(['fillRect', 2, -12, 3, 4])));
+});
+
 test('camera fits all floor corners and wall tops in portrait and landscape views', () => {
   const { office } = fixture(8);
   for (const [w, h] of [[280, 600], [360, 700], [1200, 600], [700, 260]]) {

@@ -19,6 +19,11 @@ const LEISURE_MIN_MS = 15_000;      // minimum time at leisure spot
 const LEISURE_MAX_MS = 35_000;      // maximum time at leisure spot
 const LEISURE_CHANCE = 0.45;        // probability of picking leisure vs staying at desk
 const CHAR_MIN_SEPARATION = 20;     // min px between characters — prevents sprite stacking while wandering
+const PET_FOLLOW_RADIUS = 96;
+const PET_FOLLOW_DURATION = 5000;
+const PET_REPATH_INTERVAL = 500;
+const PET_NAP_DURATION = 6000;
+const PET_GROOM_DURATION = 1500;
 
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -75,6 +80,11 @@ interface Pet {
   isSitting: boolean;
   sitTimer: number;    // ms until next sit/unsit toggle
   color: 'orange' | 'gray';
+  behavior: 'rest' | 'follow' | 'nap' | 'groom';
+  followTargetId: string | null;
+  route: Array<{ x: number; y: number }>;
+  routeLayoutRevision: number;
+  repathTimer: number;
 }
 
 interface LeisureSpot {
@@ -120,6 +130,11 @@ export function createOffice(canvas: HTMLCanvasElement): Office {
     isSitting: true,
     sitTimer: 4000,
     color: 'orange',
+    behavior: 'rest',
+    followTargetId: null,
+    route: [],
+    routeLayoutRevision: 0,
+    repathTimer: 0,
   };
 
   const office: Office = {
@@ -689,6 +704,108 @@ function petInZone(px: number, py: number, zones: Array<{ x: number; y: number; 
   return false;
 }
 
+function petNearCharacter(office: Office, x: number, y: number): boolean {
+  return [...office.characters.values()].some((character) =>
+    Math.hypot(character.x - x, character.y - y) < CHAR_MIN_SEPARATION);
+}
+
+function planPetRoute(office: Office, target: Character, zones: ReturnType<typeof furnitureZones>): boolean {
+  const pet = office.pet;
+  const start = { col: Math.round(pet.x / TILE), row: Math.round(pet.y / TILE) };
+  if (petNearCharacter(office, start.col * TILE, start.row * TILE)) {
+    start.col = Math.floor(pet.x / TILE);
+    start.row = Math.floor(pet.y / TILE);
+  }
+  const candidates: Array<{ x: number; y: number }> = [];
+  for (let row = 3; row <= office.rows - 2; row++) {
+    for (let col = 1; col <= office.cols - 3; col++) {
+      const x = col * TILE, y = row * TILE;
+      const distance = Math.hypot(x - target.x, y - target.y);
+      if (distance < 24 || distance > 48 || petInZone(x, y, zones) || petNearCharacter(office, x, y)) continue;
+      candidates.push({ x, y });
+    }
+  }
+  candidates.sort((left, right) => Math.hypot(target.x - left.x, target.y - left.y)
+    - Math.hypot(target.x - right.x, target.y - right.y)
+    || Math.hypot(pet.x - left.x, pet.y - left.y) - Math.hypot(pet.x - right.x, pet.y - right.y));
+  const blocked = (col: number, row: number) => col < 1 || col > office.cols - 3
+    || row < 3 || row > office.rows - 2 || petInZone(col * TILE, row * TILE, zones)
+    || petNearCharacter(office, col * TILE, row * TILE);
+  for (const candidate of candidates) {
+    const end = { col: candidate.x / TILE, row: candidate.y / TILE };
+    const result = findGridPath(office.cols, office.rows, start, end, blocked);
+    if (result.kind === 'unreachable') continue;
+    const route = result.points.map(({ col, row }) => ({ x: col * TILE, y: row * TILE }));
+    if (Math.hypot(pet.x - start.col * TILE, pet.y - start.row * TILE) > 0.5) {
+      route.unshift({ x: start.col * TILE, y: start.row * TILE });
+    }
+    pet.route = route;
+    pet.targetX = candidate.x;
+    pet.targetY = candidate.y;
+    pet.routeLayoutRevision = office.layoutRevision;
+    pet.repathTimer = PET_REPATH_INTERVAL;
+    return true;
+  }
+  return false;
+}
+
+function stopPetFollowing(pet: Pet): void {
+  pet.behavior = 'rest';
+  pet.followTargetId = null;
+  pet.route = [];
+  pet.isSitting = true;
+  pet.targetX = pet.x;
+  pet.targetY = pet.y;
+  pet.sitTimer = 2000 + Math.random() * 3000;
+}
+
+function updatePetFollowing(office: Office, dt: number, zones: ReturnType<typeof furnitureZones>): void {
+  const pet = office.pet;
+  pet.sitTimer -= dt;
+  const target = pet.followTargetId === null ? undefined : office.characters.get(pet.followTargetId);
+  if (!target || pet.sitTimer <= 0 || Math.hypot(target.x - pet.x, target.y - pet.y) > PET_FOLLOW_RADIUS + TILE * 2) {
+    stopPetFollowing(pet);
+    return;
+  }
+  pet.repathTimer -= dt;
+  if (pet.repathTimer <= 0 || pet.routeLayoutRevision !== office.layoutRevision) {
+    if (!planPetRoute(office, target, zones)) {
+      stopPetFollowing(pet);
+      return;
+    }
+  }
+  let waypoint = pet.route[0];
+  pet.isSitting = !waypoint;
+  if (!waypoint) return;
+  const speed = 35 * (dt / 1000);
+  let dx = waypoint.x - pet.x, dy = waypoint.y - pet.y;
+  let distance = Math.hypot(dx, dy);
+  const step = Math.min(speed, distance);
+  let nextX = distance ? pet.x + dx * step / distance : waypoint.x;
+  let nextY = distance ? pet.y + dy * step / distance : waypoint.y;
+  if (petNearCharacter(office, nextX, nextY)) {
+    if (!planPetRoute(office, target, zones)) {
+      stopPetFollowing(pet);
+      return;
+    }
+    waypoint = pet.route[0];
+    if (!waypoint) return;
+    dx = waypoint.x - pet.x;
+    dy = waypoint.y - pet.y;
+    distance = Math.hypot(dx, dy);
+    nextX = distance ? pet.x + dx * Math.min(speed, distance) / distance : waypoint.x;
+    nextY = distance ? pet.y + dy * Math.min(speed, distance) / distance : waypoint.y;
+  }
+  if (petInZone(nextX, nextY, zones) || petNearCharacter(office, nextX, nextY)) {
+    stopPetFollowing(pet);
+    return;
+  }
+  pet.x = nextX;
+  pet.y = nextY;
+  if (Math.abs(dx - dy) > 0.5) pet.direction = dx - dy > 0 ? 'right' : 'left';
+  if (speed >= distance) pet.route.shift();
+}
+
 function updatePet(office: Office, dt: number): void {
   const pet = office.pet;
   const floorY = FLOOR_START_Y + TILE;
@@ -698,15 +815,55 @@ function updatePet(office: Office, dt: number): void {
 
   // Frame animation
   pet.frameTimer += dt;
-  const fps = pet.isSitting ? 1 : 5;
+  const fps = pet.behavior === 'groom' ? 3 : pet.isSitting ? 1 : 5;
   if (pet.frameTimer >= 1000 / fps) {
     pet.frameTimer = 0;
     pet.frame = (pet.frame + 1) % 2;
   }
 
+  if (pet.behavior === 'follow') {
+    updatePetFollowing(office, dt, zones);
+    return;
+  }
+  if (pet.behavior === 'nap' || pet.behavior === 'groom') {
+    pet.sitTimer -= dt;
+    if (pet.sitTimer <= 0) {
+      pet.behavior = 'rest';
+      pet.frame = 0;
+      pet.sitTimer = 2000 + Math.random() * 3000;
+    }
+    return;
+  }
+
   // Sit/stand timer
   pet.sitTimer -= dt;
   if (pet.sitTimer <= 0) {
+    if (pet.isSitting) {
+      const activity = Math.random();
+      if (activity < 0.4) {
+        const target = [...office.characters.values()]
+          .filter((character) => Math.hypot(character.x - pet.x, character.y - pet.y) <= PET_FOLLOW_RADIUS)
+          .sort((left, right) => Math.hypot(left.x - pet.x, left.y - pet.y)
+            - Math.hypot(right.x - pet.x, right.y - pet.y))[0];
+        if (target && planPetRoute(office, target, zones)) {
+          pet.behavior = 'follow';
+          pet.followTargetId = target.id;
+          pet.sitTimer = PET_FOLLOW_DURATION;
+          updatePetFollowing(office, dt, zones);
+          return;
+        }
+      } else if (activity < 0.65) {
+        pet.behavior = 'nap';
+        pet.frame = 0;
+        pet.sitTimer = PET_NAP_DURATION;
+        return;
+      } else if (activity < 0.85) {
+        pet.behavior = 'groom';
+        pet.frame = 0;
+        pet.sitTimer = PET_GROOM_DURATION;
+        return;
+      }
+    }
     pet.isSitting = !pet.isSitting;
     pet.sitTimer = pet.isSitting
       ? 3000 + Math.random() * 5000    // sit for 3-8s
