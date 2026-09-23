@@ -53,7 +53,8 @@ export interface Character {
   routeGeneration: number;
   routeLayoutRevision: number;
   route: Array<{ x: number; y: number }>;
-  navigationIntent: 'desk' | 'leisure' | 'wander';
+  navigationIntent: 'desk' | 'leisure' | 'wander' | 'shelf';
+  shelfStartedAt?: number;
   activeTools: Map<string, { name: string; status: ToolStatus }>;
   toolHistory: ToolHistoryEntry[];
   palette: number;
@@ -109,6 +110,8 @@ export interface Office {
   onCharacterClick?: (id: string) => void;
   pet: Pet;
   leisureSpots: LeisureSpot[];
+  shelfSpot: { type: 'shelf-search'; capacity: 1; occupant: string | null;
+    itemX: number; itemY: number; standX: number; standY: number };
   interactions: InteractionRegistry;
   elapsedTime: number;
   layoutRevision: number;
@@ -147,6 +150,8 @@ export function createOffice(canvas: HTMLCanvasElement): Office {
     zoom: 1, panX: 0, panY: 0,
     pet,
     leisureSpots: [],
+    shelfSpot: { type: 'shelf-search', capacity: 1, occupant: null,
+      itemX: 137, itemY: 4, standX: 160, standY: 32 },
     interactions: new InteractionRegistry(),
     elapsedTime: 0,
     layoutRevision: 0,
@@ -286,9 +291,10 @@ function computeLeisureSpots(office: Office): void {
     { type: 'tv', capacity: 1, itemX: tvX, itemY: leisureY, standX: tvX + 18, standY: leisureY + 18, occupant: null },
   ];
 
-  office.interactions.replace(spots, (characterId, type) => {
+  office.interactions.replace([...spots, office.shelfSpot], (characterId, type) => {
     const character = office.characters.get(characterId);
-    return !!character && (character.idleGoal === type || character.sitProgress > 0);
+    return !!character && (type === 'shelf-search' ? character.navigationIntent === 'shelf'
+      : character.idleGoal === type || character.sitProgress > 0);
   });
   office.leisureSpots = spots;
   for (const spot of spots) {
@@ -311,16 +317,17 @@ function repositionDesks(office: Office): void {
     const { deskX, deskY } = deskPosition(idx);
     c.deskX = deskX;
     c.deskY = deskY;
-    if ((c.activeTools.size > 0 || c.activity === 'waiting') && c.activity !== 'walking') {
+    if (c.navigationIntent !== 'shelf' && (c.activeTools.size > 0 || c.activity === 'waiting')
+      && c.activity !== 'walking') {
       c.x = deskX;
       c.y = deskY + TILE;
-    } else if (c.idleGoal === 'desk' || c.idleGoal === null) {
+    } else if (c.navigationIntent !== 'shelf' && (c.idleGoal === 'desk' || c.idleGoal === null)) {
       if (c.activity !== 'walking') {
         c.x = deskX;
         c.y = deskY + TILE;
       }
     }
-    if (c.navigationIntent !== 'wander'
+    if (c.navigationIntent !== 'wander' && c.navigationIntent !== 'shelf'
       && (c.idleGoal === 'desk' || c.idleGoal === null || c.activeTools.size > 0 || c.activity === 'waiting')) {
       reduceCharacter(office, c, { type: 'layout-changed', x: deskX, y: deskY + TILE });
     }
@@ -561,6 +568,8 @@ function routeToTarget(office: Office, character: Character): Array<{ x: number;
   const startZone = zones.find((zone) => insideZone(character.x, character.y, zone));
   const isInteractionTarget = Math.hypot(character.targetX - character.deskX,
     character.targetY - character.deskY - TILE) < 0.5
+    || (character.navigationIntent === 'shelf' && character.targetX === office.shelfSpot.standX
+      && character.targetY === office.shelfSpot.standY)
     || office.leisureSpots.some((spot) => spot.standX === character.targetX && spot.standY === character.targetY);
   const endZone = isInteractionTarget
     ? zones.find((zone) => insideZone(character.targetX, character.targetY, zone)) : undefined;
@@ -688,6 +697,7 @@ function furnitureZones(office: Office): Array<{ x: number; y: number; w: number
     w: spot.type === 'tv' ? 65 : 54,
     h: spot.type === 'tv' ? 58 : 50,
   }));
+  zones.push({ x: office.shelfSpot.itemX, y: office.shelfSpot.itemY, w: 29, h: 11 });
   for (let index = 0; index < Math.max(2, office.characters.size); index++) {
     const desk = deskPosition(index);
     zones.push({ x: desk.deskX - 17, y: desk.deskY - 6, w: 48, h: 27 });

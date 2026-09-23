@@ -6,6 +6,8 @@
 
 ### Added
 - The pet can briefly follow a nearby agent using furniture-aware routes, nap, and groom; it returns to rest if its follow target disappears or becomes unreachable.
+- File-search tools send agents to the bookshelf for a short scan and folder retrieval animation. Concurrent searches use the desk when the shelf is occupied; web searches stay at the computer.
+- Read/view tools show a hand-held open document with restrained page turns at the desk or immediately after a shelf search; reduced-motion users see a static pose.
 
 ## [0.8.0] — 2026-09-23
 

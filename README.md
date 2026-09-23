@@ -155,7 +155,9 @@ The selected task remains open as other events arrive. Output appears after comp
 - Idle agents may wander, drink coffee, play games, or watch TV. These are UI animations, not actions performed by the real agent.
 - After a randomized timer based on 10 seconds, an idle agent has a 45% chance to select an available leisure spot. A break lasts **15-35 seconds** at the destination and expires on elapsed time even after a hidden-tab pause.
 - Each current leisure spot holds one agent at a time. Walkers plan around furniture and yield contested destinations; a room change invalidates old routes. New props and editable layouts require their own reachability validation.
-- When a tool starts, a seated character rises, heads to its desk, and sits again; the real tool can finish before the animation does.
+- File lookups such as `file_search`, `grep_search`, and `list_dir` send an agent to the bookshelf to scan rows and retrieve a folder. Only one agent can use it at a time; others search at their desks. Web search and non-search tools stay at the desk. A search that finishes early cancels the walk; the real tool never waits for the animation. This uses tool names, even with task-detail capture disabled.
+- Read/view tools display an open document in the agent's hands, with occasional page turns. After a shelf search, a read started while the agent is still at the shelf can continue there; otherwise reading happens at the desk. Reduced-motion settings keep the document still. The office never draws document contents.
+- When other tools start, a seated character rises, heads to its desk, and sits again; the real tool can finish before the animation does.
 - The animated pet wanders, naps, grooms, and sometimes follows a nearby agent to an open spot. It routes around furniture when following and settles back to rest if the agent leaves or the route closes.
 
 ### Tokens and Persistence

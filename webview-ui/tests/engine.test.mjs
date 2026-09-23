@@ -54,6 +54,162 @@ function withRandomQueue(values, fn) {
   try { return fn(); } finally { Math.random = original; }
 }
 
+test('file search reserves the bookshelf and heads toward it', () => {
+  const { office } = fixture();
+  const character = office.characters.get('agent-0');
+
+  engine.onToolStart(office, character.id, 'search-1', 'file_search', 'searching');
+
+  assert.equal(character.navigationIntent, 'shelf');
+  assert.equal(office.interactions.has('shelf-search', character.id), true);
+  assert.equal(character.activity, 'walking');
+});
+
+test('file lookup tools use the shelf while web search and edits stay at the desk', () => {
+  for (const name of ['file_search', 'grep_search', 'find_files', 'glob', 'list_dir', 'semantic_search']) {
+    const { office } = fixture();
+    engine.onToolStart(office, 'agent-0', 'tool', name, 'searching');
+    assert.equal(office.characters.get('agent-0').navigationIntent, 'shelf', name);
+  }
+  for (const name of ['web_search', 'browser_search', 'github_search', 'edit_file', 'read_file']) {
+    const { office } = fixture();
+    engine.onToolStart(office, 'agent-0', 'tool', name, 'searching');
+    assert.equal(office.characters.get('agent-0').navigationIntent, 'desk', name);
+  }
+});
+
+test('file search reaches the shelf, faces it, and starts its search sequence', () => {
+  const { office, tick } = fixture();
+  const character = office.characters.get('agent-0');
+  engine.onToolStart(office, character.id, 'tool', 'file_search', 'searching');
+
+  for (let step = 0; step < 100 && character.activity === 'walking'; step++) tick();
+
+  assert.equal(character.activity, 'searching');
+  assert.deepEqual({ x: character.x, y: character.y },
+    { x: office.shelfSpot.standX, y: office.shelfSpot.standY });
+  assert.equal(character.pose, 'stand');
+  assert.equal(character.direction, 'up');
+  assert.equal(typeof character.shelfStartedAt, 'number');
+});
+
+test('reading a retrieved file at the shelf remains standing and reserves the shelf', () => {
+  const { office, tick } = fixture();
+  const character = office.characters.get('agent-0');
+  engine.onToolStart(office, character.id, 'search', 'file_search', 'searching');
+  for (let step = 0; step < 100 && character.activity === 'walking'; step++) tick();
+  assert.equal(character.navigationIntent, 'shelf');
+  engine.onToolDone(office, character.id, 'search');
+
+  engine.onToolStart(office, character.id, 'read', 'read_file', 'reading');
+
+  assert.equal(character.activity, 'reading');
+  assert.equal(character.pose, 'stand');
+  assert.equal(character.navigationIntent, 'shelf');
+  assert.equal(office.interactions.has('shelf-search', character.id), true);
+});
+
+test('stopping a shelf reader releases the shelf and returns to desk', () => {
+  const { office, tick } = fixture();
+  const reader = office.characters.get('agent-0');
+  engine.onToolStart(office, reader.id, 'search', 'file_search', 'searching');
+  for (let step = 0; step < 100 && reader.activity === 'walking'; step++) tick();
+  engine.onToolDone(office, reader.id, 'search');
+  engine.onToolStart(office, reader.id, 'read', 'read_file', 'reading');
+
+  engine.setIdle(office, reader.id);
+
+  assert.equal(reader.workActivity, 'idle');
+  assert.equal(reader.targetX, reader.deskX);
+  assert.equal(reader.targetY, reader.deskY + 16);
+  assert.equal(office.interactions.has('shelf-search', reader.id), false);
+});
+
+test('busy shelf sends another search to its desk until the first agent releases it', () => {
+  const { office } = fixture(2);
+  engine.onToolStart(office, 'agent-0', 'first', 'file_search', 'searching');
+  engine.onToolStart(office, 'agent-1', 'second', 'file_search', 'searching');
+
+  assert.equal(office.characters.get('agent-1').navigationIntent, 'desk');
+  engine.onToolDone(office, 'agent-0', 'first');
+  engine.onToolStart(office, 'agent-1', 'third', 'grep_search', 'searching');
+  assert.equal(office.characters.get('agent-1').navigationIntent, 'shelf');
+});
+
+test('a completed file search cancels shelf travel and frees its position', () => {
+  const { office, tick } = fixture();
+  const character = office.characters.get('agent-0');
+  for (let step = 0; step < 4; step++) tick();
+  assert.equal(character.sitProgress, 1);
+  engine.onToolStart(office, character.id, 'tool', 'file_search', 'searching');
+
+  engine.onToolDone(office, character.id, 'tool');
+
+  assert.equal(office.interactions.has('shelf-search', character.id), false);
+  assert.equal(character.navigationIntent, 'desk');
+  assert.equal(character.targetX, character.deskX);
+  assert.equal(character.shelfStartedAt, undefined);
+});
+
+test('list_dir searches at the shelf even when the tool reports reading', () => {
+  const { office } = fixture();
+  engine.onToolStart(office, 'agent-0', 'tool', 'list_dir', 'reading');
+
+  assert.equal(office.characters.get('agent-0').workActivity, 'searching');
+});
+
+test('restoring an active file search does not replay the walk to the shelf', () => {
+  const { office } = fixture();
+  engine.restoreCharacterSnapshot(office, 'agent-0',
+    [['tool', { name: 'file_search', status: 'searching' }]], false);
+
+  assert.equal(office.characters.get('agent-0').navigationIntent, 'desk');
+  assert.equal(office.interactions.has('shelf-search', 'agent-0'), false);
+});
+
+test('waiting at the shelf cancels the search and returns to the desk', () => {
+  const { office, tick } = fixture();
+  const character = office.characters.get('agent-0');
+  engine.onToolStart(office, character.id, 'tool', 'file_search', 'searching');
+  for (let step = 0; step < 100 && character.activity === 'walking'; step++) tick();
+
+  engine.setWaiting(office, character.id);
+
+  assert.equal(character.navigationIntent, 'desk');
+  assert.equal(character.activity, 'walking');
+  assert.equal(office.interactions.has('shelf-search', character.id), false);
+});
+
+test('growing the office does not move a searching agent away from the shelf', () => {
+  const { office, tick } = fixture();
+  const character = office.characters.get('agent-0');
+  engine.onToolStart(office, character.id, 'tool', 'file_search', 'searching');
+  for (let step = 0; step < 100 && character.activity === 'walking'; step++) tick();
+
+  engine.addCharacter(office, 'new-agent', 'New agent');
+
+  assert.equal(character.navigationIntent, 'shelf');
+  assert.equal(character.x, office.shelfSpot.standX);
+  assert.equal(office.interactions.has('shelf-search', character.id), true);
+});
+
+test('an unreachable shelf route releases its slot and searches at the desk', () => {
+  const { office, tick } = fixture();
+  const character = office.characters.get('agent-0');
+  engine.onToolStart(office, character.id, 'tool', 'file_search', 'searching');
+  for (let step = 0; step < 8; step++) tick();
+  assert.ok(Math.hypot(character.x - character.deskX, character.y - character.deskY - 16) > 1);
+
+  engine.reduceCharacter(office, character, {
+    type: 'route-unreachable', generation: character.movementGeneration,
+  });
+
+  assert.equal(character.navigationIntent, 'desk');
+  assert.equal(character.targetX, character.deskX);
+  assert.equal(character.targetY, character.deskY + 16);
+  assert.equal(office.interactions.has('shelf-search', character.id), false);
+});
+
 // Regression coverage for the sprite-stacking bug fixed in 0.4.11/0.4.12 (CHANGELOG):
 // idle-wandering agents used to pick their next spot with no awareness of anyone else,
 // so two agents could land on the exact same tile. The existing engine/seating fixtures

@@ -19,6 +19,8 @@ globalThis.Image = class {
   naturalWidth = 0;
   set src(value) { queueMicrotask(() => this.onerror?.()); }
 };
+const motionPreference = { matches: false };
+globalThis.matchMedia = () => motionPreference;
 const engine = await import(`data:text/javascript;base64,${Buffer.from(result.outputFiles[0].text).toString('base64')}`);
 
 function fixture(count = 1) {
@@ -77,6 +79,90 @@ test('grooming pet raises a paw toward its face', () => {
   engine.renderIsometric(office);
 
   assert.ok(calls.some((call) => JSON.stringify(call) === JSON.stringify(['fillRect', 2, -12, 3, 4])));
+});
+
+test('shelf search scans rows and retrieves a folder only after arrival', () => {
+  const { office, calls } = fixture();
+  const character = office.characters.get('agent-0');
+  engine.onToolStart(office, character.id, 'tool', 'file_search', 'searching');
+  character.x = character.targetX;
+  character.y = character.targetY;
+  character.motion = 'stationary';
+  character.shelfStartedAt = 0;
+  const anchor = engine.characterPose(character).anchor;
+  const hasFolder = () => calls.some(([method, x, y, width, height]) =>
+    method === 'fillRect' && x === anchor.x + 4 && y === anchor.y - 19 && width === 10 && height === 7);
+
+  office.elapsedTime = 300;
+  engine.renderIsometric(office);
+  assert.equal(hasFolder(), false);
+  calls.length = 0;
+  office.elapsedTime = 1900;
+  engine.renderIsometric(office);
+  assert.equal(hasFolder(), true);
+});
+
+test('read_file displays an open document only while reading', () => {
+  const { office, calls } = fixture();
+  const reader = office.characters.get('agent-0');
+  const anchor = engine.characterPose(reader).anchor;
+  const hasOpenPage = () => calls.some(([method, x, y, width, height]) =>
+    method === 'fillRect' && x === anchor.x - 7 && y === anchor.y - 17 && width === 6 && height === 7);
+
+  engine.onToolStart(office, reader.id, 'read', 'read_file', 'reading');
+  engine.renderIsometric(office);
+  assert.equal(hasOpenPage(), true);
+
+  calls.length = 0;
+  engine.onToolDone(office, reader.id, 'read');
+  engine.renderIsometric(office);
+  assert.equal(hasOpenPage(), false);
+});
+
+test('document remains attached to the reader at seated and standing shelf anchors', () => {
+  const { office, calls } = fixture();
+  const reader = office.characters.get('agent-0');
+  engine.onToolStart(office, reader.id, 'read', 'read_file', 'reading');
+  reader.sitProgress = 1;
+  reader.seatKind = 'desk';
+  let anchor = engine.characterPose(reader).anchor;
+  engine.renderIsometric(office);
+  assert.ok(calls.some(([method, x, y, width]) =>
+    method === 'fillRect' && x === anchor.x - 7 && y === anchor.y - 17 && width === 6));
+
+  calls.length = 0;
+  reader.x = reader.targetX = office.shelfSpot.standX;
+  reader.y = reader.targetY = office.shelfSpot.standY;
+  reader.navigationIntent = 'shelf';
+  reader.sitProgress = 0;
+  reader.pose = 'stand';
+  anchor = engine.characterPose(reader).anchor;
+  engine.renderIsometric(office);
+  assert.ok(calls.some(([method, x, y, width]) =>
+    method === 'fillRect' && x === anchor.x - 7 && y === anchor.y - 17 && width === 6));
+});
+
+test('document page turns pause when reduced motion is requested', () => {
+  const { office, calls } = fixture();
+  const reader = office.characters.get('agent-0');
+  engine.onToolStart(office, reader.id, 'read', 'read_file', 'reading');
+  const anchor = engine.characterPose(reader).anchor;
+  const offset = [...reader.id].reduce((value, letter) => value + letter.charCodeAt(0) * 37, 0) % 2400;
+  office.elapsedTime = (2750 - offset + 3000) % 3000;
+  const hasTurningPage = () => calls.some(([method, x, y, width]) =>
+    method === 'fillRect' && x === anchor.x + 1 && y === anchor.y - 17 && width === 3);
+
+  engine.renderIsometric(office);
+  assert.equal(hasTurningPage(), true);
+
+  try {
+    motionPreference.matches = true;
+    calls.length = 0;
+    engine.renderIsometric(office);
+    assert.equal(hasTurningPage(), false);
+  } finally {
+    motionPreference.matches = false;
+  }
 });
 
 test('camera fits all floor corners and wall tops in portrait and landscape views', () => {

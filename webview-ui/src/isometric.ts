@@ -10,6 +10,7 @@ const WALL_HEIGHT = 52;
 const WOOD: Surface = ['#dbb98c', '#a67c58', '#be9469'];
 const DARK: Surface = ['#48566c', '#222e42', '#324057'];
 const COLORS = ['#a8c7fa', '#e6add5', '#f2cc8f', '#95d5b2', '#c2aff2', '#f2a6a0'];
+const reducedMotion = globalThis.matchMedia?.('(prefers-reduced-motion: reduce)');
 
 export function project(x: number, y: number, z = 0): Point {
   return { x: x - y, y: (x + y) * 0.5 - z };
@@ -167,12 +168,13 @@ function decorations(ctx: CanvasRenderingContext2D, office: Office, items: DrawI
   add(13, 18, () => plant(ctx, 13, 18));
   add(12, office.rows * 16 - 22, () => plant(ctx, 12, office.rows * 16 - 22));
   // Bookshelf with recessed, individually shaded book spines.
-  add(153, 15, () => {
-    box(ctx, 137, 4, 29, 11, 32, WOOD);
+  const shelf = office.shelfSpot;
+  add(shelf.itemX + 16, shelf.itemY + 11, () => {
+    box(ctx, shelf.itemX, shelf.itemY, 29, 11, 32, WOOD);
     for (const z of [3, 17]) {
-      front(ctx, 139, 15.1, 25, z, 12, '#746858');
+      front(ctx, shelf.itemX + 2, shelf.itemY + 11.1, 25, z, 12, '#746858');
       for (let i = 0; i < 6; i++) {
-        front(ctx, 140 + i * 4, 15.2, 3, z + 1, 7 + i % 3, COLORS[i]);
+        front(ctx, shelf.itemX + 3 + i * 4, shelf.itemY + 11.2, 3, z + 1, 7 + i % 3, COLORS[i]);
       }
     }
   });
@@ -267,7 +269,27 @@ function characterShadow(ctx: CanvasRenderingContext2D, c: Character): void {
   }
 }
 
-function character(ctx: CanvasRenderingContext2D, c: Character): void {
+function heldDocument(ctx: CanvasRenderingContext2D, c: Character, anchor: Point, elapsedTime: number): void {
+  const offset = [...c.id].reduce((value, letter) => value + letter.charCodeAt(0) * 37, 0) % 2400;
+  const turning = !reducedMotion?.matches && (elapsedTime + offset) % 3000 >= 2750;
+  ctx.fillStyle = '#8c654c';
+  ctx.fillRect(anchor.x - 8, anchor.y - 18, 18, 10);
+  ctx.fillStyle = '#f8f3de';
+  ctx.fillRect(anchor.x - 7, anchor.y - 17, 6, 7);
+  ctx.fillRect(anchor.x + 1, anchor.y - 17, turning ? 3 : 7, 7);
+  ctx.fillStyle = '#abb6b3';
+  ctx.fillRect(anchor.x - 5, anchor.y - 15, 3, 1);
+  ctx.fillRect(anchor.x + 2, anchor.y - 15, turning ? 1 : 4, 1);
+  ctx.fillStyle = '#e1bca0';
+  ctx.fillRect(anchor.x - 8, anchor.y - 13, 3, 3);
+  ctx.fillRect(anchor.x + 8, anchor.y - 13, 3, 3);
+  if (!reducedMotion?.matches && (c.pose === 'sit-desk' || c.direction === 'down')) {
+    ctx.fillStyle = '#334452';
+    ctx.fillRect(anchor.x + ((elapsedTime + offset) % 1400 < 700 ? 1 : 2), anchor.y - 26, 1, 1);
+  }
+}
+
+function character(ctx: CanvasRenderingContext2D, c: Character, elapsedTime: number): void {
   const p = characterPose(c).anchor;
   if (c.sitProgress > 0) {
     drawSeatedCharacterSprite(ctx, c.palette, c.frame, p.x - 8, p.y - 32,
@@ -277,6 +299,19 @@ function character(ctx: CanvasRenderingContext2D, c: Character): void {
     ctx.fillRect(p.x - 5, p.y - 20, 10, 17);
     ctx.fillStyle = '#f0ceaf';
     ctx.fillRect(p.x - 4, p.y - 28, 8, 9);
+  }
+  if (c.activity === 'reading' && c.motion === 'stationary') heldDocument(ctx, c, p, elapsedTime);
+  if (c.workActivity !== 'searching' || c.navigationIntent !== 'shelf'
+    || c.shelfStartedAt === undefined || c.motion !== 'stationary') return;
+  const phase = Math.floor(((elapsedTime - c.shelfStartedAt) % 2400) / 600);
+  ctx.fillStyle = '#f0ceaf';
+  ctx.fillRect(p.x + 7 + (phase === 2 ? 4 : 0), p.y - 20 - (phase === 0 ? 8 : 0), 4, 4);
+  if (phase === 3) {
+    ctx.fillStyle = '#e2b96c';
+    ctx.fillRect(p.x + 4, p.y - 19, 10, 7);
+    ctx.fillRect(p.x + 5, p.y - 21, 4, 2);
+    ctx.fillStyle = '#fbebd0';
+    ctx.fillRect(p.x + 6, p.y - 17, 6, 3);
   }
 }
 
@@ -369,7 +404,7 @@ export function renderIsometric(office: Office): void {
   }
   for (const c of desks) {
     characterShadow(ctx, c);
-    items.push({ depth: characterPose(c).depth, draw: () => character(ctx, c) });
+    items.push({ depth: characterPose(c).depth, draw: () => character(ctx, c, office.elapsedTime) });
   }
   items.push({ depth: office.pet.x + office.pet.y + 14, draw: () => cat(ctx, office) });
   items.sort((a, b) => a.depth - b.depth).forEach((item) => item.draw());
