@@ -118,12 +118,18 @@ function plant(ctx: CanvasRenderingContext2D, x: number, y: number): void {
 }
 
 function screen(ctx: CanvasRenderingContext2D, x: number, y: number, width: number, z: number,
-  active: boolean, t: number, writingMode?: number): void {
+  active: boolean, t: number, writingMode?: number, executing = false): void {
   box(ctx, x + width * 0.4, y, width * 0.2, 5, 2, DARK, z);
   box(ctx, x + width * 0.48, y + 1, 2, 2, 6, DARK, z + 2);
   box(ctx, x, y, width, 3, 17, DARK, z + 7);
   front(ctx, x + 1, y + 3.1, width - 2, z + 9, 13, active ? '#223a55' : '#263849');
-  if (active && writingMode !== undefined) {
+  if (active && executing) {
+    const pulse = reducedMotion?.matches || Math.floor(t / 650) % 2 === 0;
+    for (let line = 0; line < 3; line++) {
+      front(ctx, x + 3, y + 3.2, 8 + line * 3, z + 11 + line * 3, 1, '#85d4a1');
+    }
+    front(ctx, x + 3, y + 3.2, 2, z + 20, 1.5, pulse ? '#d7f2bf' : '#557e71');
+  } else if (active && writingMode !== undefined) {
     const colors = ['#93d8c4', '#f2cc8f', '#e8b7b7'];
     front(ctx, x + 2, y + 3.2, width - 4, z + 20, 10, '#223a55');
     for (let line = 0; line < 3; line++) {
@@ -145,6 +151,7 @@ function screen(ctx: CanvasRenderingContext2D, x: number, y: number, width: numb
 function workstation(ctx: CanvasRenderingContext2D, x: number, y: number, active: boolean,
   accent: string, t: number, writer?: Character): void {
   const writing = writer?.activity === 'typing' && writer.motion === 'stationary';
+  const executing = writer?.workActivity === 'executing' && writer.motion === 'stationary';
   const offset = writer ? [...writer.id].reduce((value, letter) => value + letter.charCodeAt(0), 0) : 0;
   const mode = writing ? (reducedMotion?.matches ? offset : Math.floor(t / 1600) + offset) % 3 : undefined;
   shadow(ctx, x - 16, y - 5, 47, 29);
@@ -154,10 +161,10 @@ function workstation(ctx: CanvasRenderingContext2D, x: number, y: number, active
   }
   box(ctx, x - 17, y - 6, 48, 27, 3, WOOD, 18);
   plane(ctx, x - 15, y - 4, 44, 1, 21.1, '#ecd2a8');
-  screen(ctx, x - 4, y - 3, 23, 21, active, t, mode);
+  screen(ctx, x - 4, y - 3, 23, 21, active, t, mode, executing);
   box(ctx, x - 3, y + 11, 19, 6, 1, ['#94a5b2', '#586c80', '#72879a'], 21);
   for (let i = 0; i < 5; i++) plane(ctx, x - 1 + i * 3, y + 12, 2, 3, 22.1, '#cfdbde');
-  if (writing) {
+  if (writing || executing) {
     const key = project(x + 2, y + 13, 24);
     ctx.fillStyle = '#c6e9cf';
     ctx.fillRect(key.x, key.y, 2, 1);
@@ -323,6 +330,42 @@ function heldCoffee(ctx: CanvasRenderingContext2D, c: Character, anchor: Point, 
   ctx.fillRect(anchor.x + 4, cupY, 6, 1);
 }
 
+function waitingGlance(ctx: CanvasRenderingContext2D, c: Character, anchor: Point, elapsedTime: number): void {
+  const elapsed = Math.max(0, elapsedTime - (c.waitingStartedAt ?? elapsedTime));
+  const aside = !reducedMotion?.matches && elapsed % 3000 >= 1300 && elapsed % 3000 < 2100;
+  ctx.fillStyle = '#334452';
+  ctx.fillRect(anchor.x + (aside ? -1 : 4), anchor.y - 25, 2, 1);
+}
+
+function drawReaction(ctx: CanvasRenderingContext2D, c: Character, anchor: Point, elapsedTime: number): void {
+  const reaction = c.reaction;
+  if (!reaction || c.workActivity !== 'idle' || c.motion !== 'stationary'
+    || elapsedTime >= reaction.expiresAt) return;
+  const animated = !reducedMotion?.matches;
+  if (reaction.outcome === 'completed') {
+    ctx.fillStyle = '#97d7b7';
+    ctx.fillRect(anchor.x + 10, anchor.y - 29, 2, 2);
+    ctx.fillRect(anchor.x + 12, anchor.y - 31, 3, 2);
+    if (animated && Math.floor(elapsedTime / 200) % 2 === 0) {
+      ctx.fillStyle = COLORS[c.palette % COLORS.length];
+      ctx.fillRect(anchor.x - 5, anchor.y - 23, 4, 2);
+    }
+  } else if (reaction.outcome === 'failed') {
+    ctx.fillStyle = '#ef9b9e';
+    ctx.fillRect(anchor.x + 12, anchor.y - 29, 2, 5);
+    ctx.fillRect(anchor.x + 12, anchor.y - 22, 2, 2);
+    if (animated) {
+      ctx.fillStyle = '#334452';
+      ctx.fillRect(anchor.x + (Math.floor(elapsedTime / 170) % 2 ? 2 : 4), anchor.y - 25, 2, 1);
+    }
+  } else {
+    ctx.fillStyle = '#c5cdd5';
+    ctx.fillRect(anchor.x + 9, anchor.y - 29, 6, 6);
+    ctx.fillStyle = '#334452';
+    ctx.fillRect(anchor.x + 11, anchor.y - 27, 2, 2);
+  }
+}
+
 function character(ctx: CanvasRenderingContext2D, c: Character, elapsedTime: number): void {
   const p = characterPose(c).anchor;
   if (c.sitProgress > 0) {
@@ -330,7 +373,8 @@ function character(ctx: CanvasRenderingContext2D, c: Character, elapsedTime: num
     const phase = (elapsedTime + offset * 73) % 4800;
     const useMouse = c.activity === 'typing' && !reducedMotion?.matches && phase >= 4000 && phase < 4700;
     drawSeatedCharacterSprite(ctx, c.palette, c.frame, p.x - 8, p.y - 32,
-      c.sitProgress, c.seatKind, c.activity === 'typing' || c.activity === 'gaming', useMouse);
+      c.sitProgress, c.seatKind, c.activity === 'typing' || c.activity === 'gaming'
+        || c.workActivity === 'executing', useMouse);
   } else if (!drawCharacterSprite(ctx, c.palette, c.direction, c.frame, p.x - 8, p.y - 32)) {
     ctx.fillStyle = COLORS[c.palette % COLORS.length];
     ctx.fillRect(p.x - 5, p.y - 20, 10, 17);
@@ -339,6 +383,8 @@ function character(ctx: CanvasRenderingContext2D, c: Character, elapsedTime: num
   }
   if (c.activity === 'reading' && c.motion === 'stationary') heldDocument(ctx, c, p, elapsedTime);
   if (c.activity === 'coffee_break' && c.motion === 'stationary') heldCoffee(ctx, c, p, elapsedTime);
+  if (c.activity === 'waiting' && c.motion === 'stationary') waitingGlance(ctx, c, p, elapsedTime);
+  drawReaction(ctx, c, p, elapsedTime);
   if (c.workActivity !== 'searching' || c.navigationIntent !== 'shelf'
     || c.shelfStartedAt === undefined || c.motion !== 'stationary') return;
   const phase = Math.floor(((elapsedTime - c.shelfStartedAt) % 2400) / 600);

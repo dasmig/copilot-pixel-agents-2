@@ -65,6 +65,8 @@ export interface Character {
   inputTokens: number; outputTokens: number;
   sessionStartedAt: number;
   speechBubble?: { text: string; expiresAt: number; owner: string };
+  reaction?: { outcome: Exclude<ToolHistoryEntry['outcome'], 'running'>; expiresAt: number };
+  pendingOutcome?: Exclude<ToolHistoryEntry['outcome'], 'running'>;
   selected: boolean;
   // Leisure system
   idleGoal: LeisureType | 'desk' | null;
@@ -72,6 +74,7 @@ export interface Character {
   leisureTimer: number;    // ms remaining in leisure activity
   leisureExpiresAt?: number;
   coffeeStartedAt?: number;
+  waitingStartedAt?: number;
 }
 
 interface Pet {
@@ -402,7 +405,8 @@ export function onToolDone(office: Office, agentId: string, toolId: string, rece
     const entry = c.toolHistory.find((e) => e.toolId === toolId && e.outcome === 'running');
     if (entry) { entry.finishedAt = Date.now(); entry.outcome = 'completed'; }
   }
-  reduceCharacter(office, c, { type: 'tool-finished', toolId });
+  reduceCharacter(office, c, { type: 'tool-finished', toolId,
+    outcome: received?.unmatched ? undefined : received?.outcome });
   if (c.activeTools.size === 0) {
     c.idleTimer = IDLE_WANDER_MS * (0.5 + Math.random());
   }
@@ -489,11 +493,15 @@ function update(office: Office, dt: number, elapsed: number): void {
     if (c.speechBubble && office.elapsedTime >= c.speechBubble.expiresAt) {
       reduceCharacter(office, c, { type: 'bubble-expired', owner: c.speechBubble.owner });
     }
+    if (c.reaction && office.elapsedTime >= c.reaction.expiresAt) {
+      reduceCharacter(office, c, { type: 'reaction-expired' });
+    }
   }
 }
 
 function updateCharacterAnimation(c: Character, dt: number): void {
-  const animateHands = c.sitProgress > 0 && (c.activity === 'typing' || c.activity === 'gaming');
+  const animateHands = c.sitProgress > 0
+    && (c.activity === 'typing' || c.activity === 'gaming' || c.workActivity === 'executing');
   if (!animateHands && (c.motion === 'stationary' || c.sitProgress > 0)) {
     c.frame = 0;
     c.frameTimer = 0;

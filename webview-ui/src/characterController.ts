@@ -1,9 +1,20 @@
 import type { Character, CharacterActivity, LeisureType, Office, WorkActivity } from './engine.js';
-import type { ToolStatus } from './types.js';
+import type { ToolHistoryEntry, ToolStatus } from './types.js';
+
+const REACTION_DURATION_MS = 1200;
+
+function prioritizedOutcome(
+  previous: Character['pendingOutcome'], next: Character['pendingOutcome'],
+): Character['pendingOutcome'] {
+  const priority = { completed: 0, interrupted: 1, failed: 2 };
+  if (!previous) return next;
+  if (!next) return previous;
+  return priority[previous] >= priority[next] ? previous : next;
+}
 
 export type CharacterEvent =
   | { type: 'tool-started'; toolId: string; name: string; status: ToolStatus }
-  | { type: 'tool-finished'; toolId: string }
+  | { type: 'tool-finished'; toolId: string; outcome?: ToolHistoryEntry['outcome'] }
   | { type: 'waiting' }
   | { type: 'stopped' }
   | { type: 'arrived'; generation: number }
@@ -14,6 +25,7 @@ export type CharacterEvent =
   | { type: 'layout-changed'; x: number; y: number }
   | { type: 'seat-vacated' }
   | { type: 'bubble-expired'; owner: string }
+  | { type: 'reaction-expired' }
   | { type: 'removed' }
   | { type: 'snapshot-restored'; tools: ReadonlyArray<readonly [string, { name: string; status: ToolStatus }]>; isWaiting: boolean };
 
@@ -123,6 +135,8 @@ export function reduceCharacter(office: Office, character: Character, event: Cha
   switch (event.type) {
     case 'tool-started':
       character.intentGeneration++;
+      character.reaction = undefined;
+      character.pendingOutcome = undefined;
       character.leisureExpiresAt = undefined;
       character.activeTools.set(event.toolId, { name: event.name, status: event.status });
       character.idleGoal = null;
@@ -136,11 +150,22 @@ export function reduceCharacter(office: Office, character: Character, event: Cha
       character.intentGeneration++;
       character.activeTools.delete(event.toolId);
       selectWorkDestination(office, character);
+      const outcome = prioritizedOutcome(character.pendingOutcome,
+        event.outcome === 'running' ? undefined : event.outcome);
+      if (character.activeTools.size === 0) {
+        character.pendingOutcome = undefined;
+        if (outcome) character.reaction = { outcome, expiresAt: office.elapsedTime + REACTION_DURATION_MS };
+      } else {
+        character.pendingOutcome = outcome;
+      }
       if (character.speechBubble?.owner === `tool:${event.toolId}`) character.speechBubble = undefined;
       break;
     case 'waiting':
       character.intentGeneration++;
+      character.reaction = undefined;
+      character.pendingOutcome = undefined;
       character.activeTools.clear();
+      character.waitingStartedAt = office.elapsedTime;
       character.navigationIntent = 'desk';
       character.shelfStartedAt = undefined;
       if (character.idleGoal === null && character.targetX === office.shelfSpot.standX
@@ -158,6 +183,7 @@ export function reduceCharacter(office: Office, character: Character, event: Cha
     case 'stopped':
       character.intentGeneration++;
       character.activeTools.clear();
+      character.pendingOutcome = undefined;
       character.navigationIntent = 'desk';
       character.shelfStartedAt = undefined;
       if (character.idleGoal === null && character.targetX === office.shelfSpot.standX
@@ -231,9 +257,15 @@ export function reduceCharacter(office: Office, character: Character, event: Cha
       if (character.speechBubble?.owner !== event.owner) return;
       if (office.elapsedTime >= character.speechBubble.expiresAt) character.speechBubble = undefined;
       break;
+    case 'reaction-expired':
+      if (character.reaction && office.elapsedTime >= character.reaction.expiresAt) character.reaction = undefined;
+      break;
     case 'snapshot-restored':
       character.intentGeneration++;
+      character.reaction = undefined;
+      character.pendingOutcome = undefined;
       character.leisureExpiresAt = undefined;
+      character.waitingStartedAt = event.isWaiting ? office.elapsedTime : undefined;
       character.navigationIntent = 'desk';
       character.shelfStartedAt = undefined;
       character.activeTools.clear();
@@ -255,6 +287,7 @@ export function reduceCharacter(office: Office, character: Character, event: Cha
   }
   resolveState(character);
   if (character.activity !== 'coffee_break') character.coffeeStartedAt = undefined;
+  if (character.workActivity !== 'waiting') character.waitingStartedAt = undefined;
   if (character.navigationIntent !== 'shelf') {
     office.interactions.releaseCharacter(character.id, (type) => type === 'shelf-search');
   }

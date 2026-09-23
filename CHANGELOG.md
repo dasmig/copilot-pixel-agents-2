@@ -10,6 +10,8 @@
 - Read/view tools show a hand-held open document with restrained page turns at the desk or immediately after a shelf search; reduced-motion users see a static pose.
 - Coffee breaks now show an agent holding a cup and taking periodic sips instead of leaving the cup on the counter. The cup remains still with reduced motion.
 - Writing and editing now show alternating typing, occasional mouse reaches, keyboard highlights, and three staggered abstract monitor layouts without exposing source text.
+- Command execution shows an abstract terminal pulse and seated keyboard movement; waiting agents glance aside while remaining interruptible by new work.
+- Short success, failure, and interruption indicators appear only when idle, with concurrent outcomes collapsed by priority and reduced-motion indicators kept static.
 
 ## [0.8.0] — 2026-09-23
 

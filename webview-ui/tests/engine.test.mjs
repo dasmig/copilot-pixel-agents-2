@@ -418,6 +418,89 @@ test('a late tool completion cannot erase waiting or its question bubble', () =>
   assert.equal(character.speechBubble?.text, '?');
 });
 
+test('tool completion shows a bounded reaction based on the reported outcome', () => {
+  const { office, tick } = fixture();
+  const character = office.characters.get('agent-0');
+  engine.onToolStart(office, character.id, 'run', 'run_command', 'running');
+  engine.onToolDone(office, character.id, 'run', {
+    entryId: 'run', toolId: 'run', toolName: 'run_command', status: 'running',
+    startedAt: 1, outcome: 'failed',
+  });
+
+  assert.equal(character.reaction?.outcome, 'failed');
+  tick(1600);
+  assert.equal(character.reaction, undefined);
+});
+
+test('legacy completion without a reported outcome does not imply success', () => {
+  const { office } = fixture();
+  const character = office.characters.get('agent-0');
+  engine.onToolStart(office, character.id, 'run', 'run_command', 'running');
+
+  engine.onToolDone(office, character.id, 'run');
+
+  assert.equal(character.reaction, undefined);
+});
+
+test('a tool finishing during another active tool does not displace its work', () => {
+  const { office } = fixture();
+  const character = office.characters.get('agent-0');
+  engine.onToolStart(office, character.id, 'old', 'read_file', 'reading');
+  engine.onToolStart(office, character.id, 'new', 'edit_file', 'writing');
+
+  engine.onToolDone(office, character.id, 'old');
+
+  assert.equal(character.reaction, undefined);
+  assert.equal(character.activity, 'typing');
+});
+
+test('concurrent completions collapse to one failure reaction after work ends', () => {
+  const { office } = fixture();
+  const character = office.characters.get('agent-0');
+  engine.onToolStart(office, character.id, 'first', 'run_command', 'running');
+  engine.onToolStart(office, character.id, 'second', 'edit_file', 'writing');
+  engine.onToolDone(office, character.id, 'first', {
+    entryId: 'first', toolId: 'first', toolName: 'run_command', status: 'running',
+    startedAt: 1, outcome: 'failed',
+  });
+  assert.equal(character.reaction, undefined);
+
+  engine.onToolDone(office, character.id, 'second');
+
+  assert.equal(character.reaction?.outcome, 'failed');
+});
+
+test('an interrupted tool retains a neutral reaction through stop', () => {
+  const { office } = fixture();
+  const character = office.characters.get('agent-0');
+  engine.onToolStart(office, character.id, 'run', 'run_command', 'running');
+  engine.onToolDone(office, character.id, 'run', {
+    entryId: 'run', toolId: 'run', toolName: 'run_command', status: 'running',
+    startedAt: 1, outcome: 'interrupted',
+  });
+
+  engine.setIdle(office, character.id);
+
+  assert.equal(character.reaction?.outcome, 'interrupted');
+});
+
+test('new work and waiting each clear an older completion reaction', () => {
+  const { office } = fixture();
+  const character = office.characters.get('agent-0');
+  engine.onToolStart(office, character.id, 'first', 'edit_file', 'writing');
+  engine.onToolDone(office, character.id, 'first', {
+    entryId: 'first', toolId: 'first', toolName: 'edit_file', status: 'writing',
+    startedAt: 1, outcome: 'completed',
+  });
+  assert.equal(character.reaction?.outcome, 'completed');
+
+  engine.onToolStart(office, character.id, 'second', 'read_file', 'reading');
+  assert.equal(character.reaction, undefined);
+  engine.onToolDone(office, character.id, 'second');
+  engine.setWaiting(office, character.id);
+  assert.equal(character.reaction, undefined);
+});
+
 test('a tool bubble expires on simulation time without erasing a newer tool bubble', () => {
   const { office, tick } = fixture();
   const character = office.characters.get('agent-0');
@@ -446,7 +529,20 @@ test('standing away from a seat has a standing pose even while idle or waiting',
   assert.equal(character.pose, 'stand');
 });
 
-test('command execution remains seated without advancing locomotion frames', () => {
+test('a new tool cancels the waiting glance without a detour', () => {
+  const { office } = fixture();
+  const character = office.characters.get('agent-0');
+  engine.setWaiting(office, character.id);
+  assert.equal(character.waitingStartedAt, office.elapsedTime);
+
+  engine.onToolStart(office, character.id, 'edit', 'edit_file', 'writing');
+
+  assert.equal(character.waitingStartedAt, undefined);
+  assert.equal(character.motion, 'stationary');
+  assert.equal(character.workActivity, 'writing');
+});
+
+test('command execution remains seated while keyboard hands animate', () => {
   const { office, tick } = fixture();
   const character = office.characters.get('agent-0');
   engine.onToolStart(office, character.id, 'run', 'run_command', 'running');
@@ -456,7 +552,7 @@ test('command execution remains seated without advancing locomotion frames', () 
   assert.equal(character.motion, 'stationary');
   assert.equal(character.pose, 'sit-desk');
   assert.equal(character.activity, 'running');
-  assert.equal(character.frame, 0);
+  assert.ok(character.frame > 0);
 });
 
 test('stop during the walk to leisure cancels its destination and reservation', () => {

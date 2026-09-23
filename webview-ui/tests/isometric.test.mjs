@@ -200,6 +200,114 @@ test('writing monitor cycles through three abstract layouts without displaying t
   assert.equal(new Set(frames.map((colors) => colors.join(','))).size, 3);
 });
 
+test('command execution displays a terminal monitor instead of the writing screen', () => {
+  const { office, painted } = fixture();
+  engine.onToolStart(office, 'agent-0', 'run', 'run_command', 'running');
+
+  engine.renderIsometric(office);
+
+  assert.ok(painted.includes('#85d4a1'));
+  assert.equal(painted.includes('#93d8c4'), false);
+});
+
+test('terminal cursor pulses but stays fixed with reduced motion', () => {
+  const { office, painted } = fixture();
+  engine.onToolStart(office, 'agent-0', 'run', 'run_command', 'running');
+  const cursorColor = () => painted.includes('#d7f2bf');
+  office.elapsedTime = 0;
+  engine.renderIsometric(office);
+  assert.equal(cursorColor(), true);
+  painted.length = 0;
+  office.elapsedTime = 700;
+  engine.renderIsometric(office);
+  assert.equal(cursorColor(), false);
+
+  try {
+    motionPreference.matches = true;
+    painted.length = 0;
+    engine.renderIsometric(office);
+    assert.equal(cursorColor(), true);
+  } finally {
+    motionPreference.matches = false;
+  }
+});
+
+test('waiting agent looks aside briefly and reduced motion holds the resting gaze', () => {
+  const { office, calls } = fixture();
+  const agent = office.characters.get('agent-0');
+  engine.setWaiting(office, agent.id);
+  const anchor = engine.characterPose(agent).anchor;
+  const looksAside = () => calls.some(([method, x, y, width, height]) =>
+    method === 'fillRect' && x === anchor.x - 1 && y === anchor.y - 25 && width === 2 && height === 1);
+
+  office.elapsedTime = 200;
+  engine.renderIsometric(office);
+  assert.equal(looksAside(), false);
+  calls.length = 0;
+  office.elapsedTime = 1650;
+  engine.renderIsometric(office);
+  assert.equal(looksAside(), true);
+
+  try {
+    motionPreference.matches = true;
+    calls.length = 0;
+    engine.renderIsometric(office);
+    assert.equal(looksAside(), false);
+  } finally {
+    motionPreference.matches = false;
+  }
+});
+
+test('completed, failed, and interrupted tools draw distinct idle reactions', () => {
+  for (const [outcome, xOffset, width, height] of [
+    ['completed', 10, 2, 2], ['failed', 12, 2, 5], ['interrupted', 9, 6, 6],
+  ]) {
+    const { office, calls } = fixture();
+    const agent = office.characters.get('agent-0');
+    engine.onToolStart(office, agent.id, 'tool', 'run_command', 'running');
+    engine.onToolDone(office, agent.id, 'tool', {
+      entryId: 'tool', toolId: 'tool', toolName: 'run_command', status: 'running', startedAt: 1, outcome,
+    });
+    const anchor = engine.characterPose(agent).anchor;
+
+    engine.renderIsometric(office);
+
+    assert.ok(calls.some(([method, x, y, rectWidth, rectHeight]) =>
+      method === 'fillRect' && x === anchor.x + xOffset && y === anchor.y - 29
+        && rectWidth === width && rectHeight === height), outcome);
+  }
+});
+
+test('reaction is hidden while walking and after expiry, with a static reduced-motion indicator', () => {
+  const { office, calls } = fixture();
+  const agent = office.characters.get('agent-0');
+  engine.onToolStart(office, agent.id, 'tool', 'run_command', 'running');
+  engine.onToolDone(office, agent.id, 'tool', {
+    entryId: 'tool', toolId: 'tool', toolName: 'run_command', status: 'running',
+    startedAt: 1, outcome: 'completed',
+  });
+  const anchor = engine.characterPose(agent).anchor;
+  const hasCheck = () => calls.some(([method, x, y, width, height]) =>
+    method === 'fillRect' && x === anchor.x + 10 && y === anchor.y - 29 && width === 2 && height === 2);
+
+  try {
+    motionPreference.matches = true;
+    engine.renderIsometric(office);
+    assert.equal(hasCheck(), true);
+    calls.length = 0;
+    agent.motion = 'walking';
+    engine.renderIsometric(office);
+    assert.equal(hasCheck(), false);
+    calls.length = 0;
+    agent.motion = 'stationary';
+    office.elapsedTime = agent.reaction.expiresAt;
+    engine.renderIsometric(office);
+    assert.equal(hasCheck(), false);
+  } finally {
+    motionPreference.matches = false;
+  }
+});
+
 test('two writing agents use different monitor layouts at the same time', () => {
   const { office, painted } = fixture(2);
   for (const editor of office.characters.values()) {
