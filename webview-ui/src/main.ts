@@ -7,6 +7,7 @@ import {
   removeCharacter,
   resetOfficeView,
   resizeOffice,
+  restoreCharacterSnapshot,
   setIdle,
   setOfficeZoom,
   setWaiting,
@@ -17,6 +18,8 @@ import type { Character } from './engine.js';
 import type { ClientMessage, ServerMessage } from './types.js';
 import { createHostTransport } from './hostTransport.js';
 import { outcomeLabel, renderTaskInspector } from './taskInspector.js';
+import { getAssetStatus, loadSprites } from './sprites.js';
+import { version } from '../package.json';
 
 const host = createHostTransport();
 function post(msg: ClientMessage): void { host.post(msg); }
@@ -30,8 +33,21 @@ document.addEventListener('DOMContentLoaded', () => {
   // Status bar
   const statusBar = document.createElement('div');
   statusBar.id = 'status-bar';
+  statusBar.setAttribute('role', 'status');
   statusBar.textContent = 'Connecting…';
   app.appendChild(statusBar);
+
+  const assetWarning = document.createElement('div');
+  assetWarning.id = 'asset-warning';
+  assetWarning.hidden = true;
+  assetWarning.setAttribute('role', 'status');
+  app.appendChild(assetWarning);
+  void loadSprites().then(() => {
+    const missingCharacters = [...getAssetStatus()].filter(([key, state]) => key.startsWith('characters/') && state !== 'loaded');
+    if (missingCharacters.length === 0) return;
+    assetWarning.textContent = `Character sprites unavailable (${missingCharacters.map(([key]) => key).join(', ')}) · procedural fallback active · v${version}`;
+    assetWarning.hidden = false;
+  });
 
   // Canvas wrapper — flex:1 goes here so canvas intrinsic size doesn't fight the layout
   const canvasWrap = document.createElement('div');
@@ -161,7 +177,7 @@ document.addEventListener('DOMContentLoaded', () => {
   host.subscribe((msg: ServerMessage) => {
     switch (msg.type) {
       case 'serverPort':
-        statusBar.textContent = `Hooks server → localhost:${msg.port}`;
+        if (host.supportsCommands) statusBar.textContent = `Hooks server → localhost:${msg.port}`;
         break;
 
       case 'existingAgents':
@@ -177,11 +193,7 @@ document.addEventListener('DOMContentLoaded', () => {
           c.sessionStartedAt = a.sessionStartedAt ?? c.sessionStartedAt;
           c.inputTokens = a.inputTokens ?? 0;
           c.outputTokens = a.outputTokens ?? 0;
-          c.activeTools.clear();
-          // Restore simulation independently of history, never replay old animations.
-          for (const [toolId, tool] of a.activeTools ?? []) onToolStart(office, a.id, toolId, tool.name, tool.status);
-          if (a.isWaiting) setWaiting(office, a.id);
-          else if ((a.activeTools?.length ?? 0) === 0) setIdle(office, a.id);
+          restoreCharacterSnapshot(office, a.id, a.activeTools ?? [], a.isWaiting);
           syncHistory(office, a.id, a.toolHistory ?? []);
         }
         syncEmptyOverlay();
@@ -262,6 +274,14 @@ document.addEventListener('DOMContentLoaded', () => {
         break;
       }
     }
+  }, (state) => {
+    statusBar.dataset.connection = state;
+    statusBar.textContent = {
+      connecting: 'Browser connecting',
+      reconnecting: 'Browser reconnecting · scene may be stale',
+      disconnected: 'Browser disconnected · Keep VS Code running; retrying',
+      connected: 'Browser connected',
+    }[state];
   });
 
   post({ type: 'webviewReady' });

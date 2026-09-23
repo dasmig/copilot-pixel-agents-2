@@ -2,6 +2,9 @@ import { hitTestCharacter, renderIsometric } from './isometric.js';
 import { loadSprites } from './sprites.js';
 import { legacyEntry, replaceHistory, upsertHistory } from './history.js';
 import { updateSeating, type SeatKind } from './seating.js';
+import { reduceCharacter } from './characterController.js';
+import { InteractionRegistry } from './interactionRegistry.js';
+import { findGridPath } from './gridPathfinder.js';
 import type { ToolHistoryEntry, ToolStatus } from './types.js';
 
 // ─── Constants ────────────────────────────────────────────────────────────────
@@ -27,6 +30,8 @@ export type CharacterActivity =
 
 export type LeisureType = 'gaming' | 'tv' | 'coffee';
 
+export type WorkActivity = 'idle' | 'writing' | 'reading' | 'executing' | 'searching' | 'waiting';
+
 export interface Character {
   id: string;
   name: string;
@@ -35,6 +40,15 @@ export interface Character {
   targetX: number; targetY: number;
   deskX: number; deskY: number;
   activity: CharacterActivity;
+  workActivity: WorkActivity;
+  motion: 'stationary' | 'walking';
+  pose: 'stand' | 'sit-desk' | 'sit-gaming' | 'sit-tv' | 'drink-coffee';
+  intentGeneration: number;
+  movementGeneration: number;
+  routeGeneration: number;
+  routeLayoutRevision: number;
+  route: Array<{ x: number; y: number }>;
+  navigationIntent: 'desk' | 'leisure' | 'wander';
   activeTools: Map<string, { name: string; status: ToolStatus }>;
   toolHistory: ToolHistoryEntry[];
   palette: number;
@@ -44,12 +58,13 @@ export interface Character {
   seatKind: SeatKind | null;
   inputTokens: number; outputTokens: number;
   sessionStartedAt: number;
-  speechBubble?: { text: string; expiresAt: number };
+  speechBubble?: { text: string; expiresAt: number; owner: string };
   selected: boolean;
   // Leisure system
   idleGoal: LeisureType | 'desk' | null;
   idleTimer: number;       // ms until next idle action
   leisureTimer: number;    // ms remaining in leisure activity
+  leisureExpiresAt?: number;
 }
 
 interface Pet {
@@ -64,6 +79,7 @@ interface Pet {
 
 interface LeisureSpot {
   type: LeisureType;
+  capacity: number;
   itemX: number; itemY: number;
   standX: number; standY: number;
   occupant: string | null;
@@ -83,7 +99,9 @@ export interface Office {
   onCharacterClick?: (id: string) => void;
   pet: Pet;
   leisureSpots: LeisureSpot[];
+  interactions: InteractionRegistry;
   elapsedTime: number;
+  layoutRevision: number;
 }
 
 // ─── Factory ──────────────────────────────────────────────────────────────────
@@ -114,7 +132,9 @@ export function createOffice(canvas: HTMLCanvasElement): Office {
     zoom: 1, panX: 0, panY: 0,
     pet,
     leisureSpots: [],
+    interactions: new InteractionRegistry(),
     elapsedTime: 0,
+    layoutRevision: 0,
   };
 
   let pointerId: number | null = null;
@@ -208,6 +228,7 @@ export function resetOfficeView(office: Office): void {
 }
 
 function refreshRoomLayout(office: Office): void {
+  office.layoutRevision++;
   office.cols = 14;
   office.rows = Math.max(16, 10 + Math.ceil(office.characters.size / 2) * 4);
   computeLeisureSpots(office);
@@ -215,11 +236,22 @@ function refreshRoomLayout(office: Office): void {
 
   const maxX = (office.cols - 2) * TILE;
   const maxY = (office.rows - 2) * TILE;
+  const zones = furnitureZones(office);
   for (const c of office.characters.values()) {
     c.x = clamp(c.x, TILE, maxX);
     c.y = clamp(c.y, FLOOR_START_Y, maxY);
-    c.targetX = clamp(c.targetX, TILE, maxX);
-    c.targetY = clamp(c.targetY, FLOOR_START_Y, maxY);
+    const atDesk = Math.hypot(c.x - c.deskX, c.y - c.deskY - TILE) < 0.5;
+    const atReservedSeat = office.leisureSpots.some((spot) =>
+      office.interactions.has(spot.type, c.id) && (spot.type === c.idleGoal || c.sitProgress > 0)
+      && Math.hypot(c.x - spot.standX, c.y - spot.standY) < 0.5);
+    if (!atDesk && !atReservedSeat && zones.some((zone) => insideZone(c.x, c.y, zone))) {
+      const safe = nearestClearTile(office, c, zones);
+      if (safe) { c.x = safe.x; c.y = safe.y; }
+    }
+    reduceCharacter(office, c, {
+      type: 'layout-changed',
+      x: clamp(c.targetX, TILE, maxX), y: clamp(c.targetY, FLOOR_START_Y, maxY),
+    });
   }
   const petMaxX = (office.cols - 3) * TILE;
   const petMinY = FLOOR_START_Y + TILE;
@@ -234,31 +266,28 @@ function computeLeisureSpots(office: Office): void {
   const leisureY = (office.rows - 4) * TILE;
   const tvX = (office.cols - 6) * TILE;
   const spots: LeisureSpot[] = [
-    { type: 'coffee', itemX: coffeeX, itemY: 28, standX: coffeeX - 8, standY: 46, occupant: null },
-    { type: 'gaming', itemX: 20, itemY: leisureY, standX: 28, standY: leisureY + 18, occupant: null },
-    { type: 'tv', itemX: tvX, itemY: leisureY, standX: tvX + 18, standY: leisureY + 18, occupant: null },
+    { type: 'coffee', capacity: 1, itemX: coffeeX, itemY: 28, standX: coffeeX - 8, standY: 46, occupant: null },
+    { type: 'gaming', capacity: 1, itemX: 20, itemY: leisureY, standX: 28, standY: leisureY + 18, occupant: null },
+    { type: 'tv', capacity: 1, itemX: tvX, itemY: leisureY, standX: tvX + 18, standY: leisureY + 18, occupant: null },
   ];
 
+  office.interactions.replace(spots, (characterId, type) => {
+    const character = office.characters.get(characterId);
+    return !!character && (character.idleGoal === type || character.sitProgress > 0);
+  });
+  office.leisureSpots = spots;
   for (const spot of spots) {
-    const previous = office.leisureSpots.find((s) => s.type === spot.type);
-    spot.occupant = previous?.occupant ?? null;
     if (spot.occupant === null) continue;
     const c = office.characters.get(spot.occupant);
-    if (!c) {
-      spot.occupant = null;
-      continue;
-    }
+    if (!c) continue;
     if (c.idleGoal === spot.type) {
-      c.targetX = spot.standX;
-      c.targetY = spot.standY;
       if (c.activity !== 'walking') {
         c.x = spot.standX;
         c.y = spot.standY;
       }
+      reduceCharacter(office, c, { type: 'layout-changed', x: spot.standX, y: spot.standY });
     }
   }
-
-  office.leisureSpots = spots;
 }
 
 function repositionDesks(office: Office): void {
@@ -268,15 +297,17 @@ function repositionDesks(office: Office): void {
     c.deskX = deskX;
     c.deskY = deskY;
     if ((c.activeTools.size > 0 || c.activity === 'waiting') && c.activity !== 'walking') {
-      c.x = c.targetX = deskX;
-      c.y = c.targetY = deskY + TILE;
+      c.x = deskX;
+      c.y = deskY + TILE;
     } else if (c.idleGoal === 'desk' || c.idleGoal === null) {
-      c.targetX = deskX;
-      c.targetY = deskY + TILE;
       if (c.activity !== 'walking') {
         c.x = deskX;
         c.y = deskY + TILE;
       }
+    }
+    if (c.navigationIntent !== 'wander'
+      && (c.idleGoal === 'desk' || c.idleGoal === null || c.activeTools.size > 0 || c.activity === 'waiting')) {
+      reduceCharacter(office, c, { type: 'layout-changed', x: deskX, y: deskY + TILE });
     }
     idx++;
   }
@@ -301,6 +332,8 @@ export function addCharacter(office: Office, id: string, name: string): void {
     targetX: deskX, targetY: deskY + TILE,
     deskX, deskY,
     activity: 'idle',
+    workActivity: 'idle', motion: 'stationary', pose: 'sit-desk', intentGeneration: 0, movementGeneration: 0,
+    routeGeneration: -1, routeLayoutRevision: -1, route: [], navigationIntent: 'desk',
     activeTools: new Map(),
     toolHistory: [],
     palette: nextPaletteIndex++ % 6,
@@ -319,8 +352,10 @@ export function addCharacter(office: Office, id: string, name: string): void {
 }
 
 export function removeCharacter(office: Office, id: string): void {
-  if (!office.characters.delete(id)) return;
-  freeSpotsFor(office, id);
+  const character = office.characters.get(id);
+  if (!character) return;
+  reduceCharacter(office, character, { type: 'removed' });
+  office.characters.delete(id);
   refreshRoomLayout(office);
 }
 
@@ -330,14 +365,7 @@ export function onToolStart(
 ): void {
   const c = office.characters.get(agentId);
   if (!c) return;
-  // Return naturally: seated agents first rise, then walk to their computer.
-  c.idleGoal = null;
-  c.targetX = c.deskX;
-  c.targetY = c.deskY + TILE;
-  c.activeTools.set(toolId, { name: toolName, status });
-  c.activity = Math.hypot(c.x - c.targetX, c.y - c.targetY) < 0.5
-    ? toolStatusToActivity(status) : 'walking';
-  c.speechBubble = { text: shortToolName(toolName), expiresAt: Date.now() + 3500 };
+  reduceCharacter(office, c, { type: 'tool-started', toolId, name: toolName, status });
   upsertHistory(c.toolHistory, entry ?? legacyEntry(toolId, toolName, status));
   // Reset idle timer so they don't immediately dash to leisure after work ends
   c.idleTimer = IDLE_WANDER_MS * (1 + Math.random());
@@ -351,12 +379,9 @@ export function onToolDone(office: Office, agentId: string, toolId: string, rece
     const entry = c.toolHistory.find((e) => e.toolId === toolId && e.outcome === 'running');
     if (entry) { entry.finishedAt = Date.now(); entry.outcome = 'completed'; }
   }
-  c.activeTools.delete(toolId);
+  reduceCharacter(office, c, { type: 'tool-finished', toolId });
   if (c.activeTools.size === 0) {
-    if (c.activity !== 'walking') c.activity = 'idle';
     c.idleTimer = IDLE_WANDER_MS * (0.5 + Math.random());
-  } else if (c.activity !== 'walking') {
-    c.activity = toolStatusToActivity([...c.activeTools.values()][0].status);
   }
 }
 
@@ -368,30 +393,35 @@ export function syncHistory(office: Office, agentId: string, history: ToolHistor
 export function setWaiting(office: Office, agentId: string): void {
   const c = office.characters.get(agentId);
   if (!c) return;
-  c.activeTools.clear();
-  c.activity = 'waiting';
-  c.speechBubble = { text: '?', expiresAt: Date.now() + 15000 };
+  reduceCharacter(office, c, { type: 'waiting' });
 }
 
 export function setIdle(office: Office, agentId: string): void {
   const c = office.characters.get(agentId);
   if (!c) return;
-  c.activeTools.clear();
-  if (c.activity !== 'walking') {
-    c.activity = Math.hypot(c.x - c.targetX, c.y - c.targetY) >= 0.5 ? 'walking'
-      : c.idleGoal && c.idleGoal !== 'desk' ? goalToActivity(c.idleGoal) : 'idle';
-  }
-  c.speechBubble = undefined;
+  reduceCharacter(office, c, { type: 'stopped' });
   c.idleTimer = IDLE_WANDER_MS * (0.5 + Math.random());
+}
+
+export function restoreCharacterSnapshot(
+  office: Office, agentId: string,
+  tools: ReadonlyArray<readonly [string, { name: string; status: ToolStatus }]>, isWaiting: boolean,
+): void {
+  const character = office.characters.get(agentId);
+  if (!character) return;
+  reduceCharacter(office, character, { type: 'snapshot-restored', tools, isWaiting });
+  character.idleTimer = IDLE_WANDER_MS * (0.5 + Math.random());
+  character.leisureTimer = 0;
 }
 
 // ─── Loop ─────────────────────────────────────────────────────────────────────
 
 export function startLoop(office: Office): void {
   function tick(ts: number) {
-    const dt = Math.min(ts - office.lastTimestamp, 100);
+    const elapsed = Math.max(0, ts - office.lastTimestamp);
+    const dt = Math.min(elapsed, 100);
     office.lastTimestamp = ts;
-    update(office, dt);
+    update(office, dt, elapsed);
     renderIsometric(office);
     office.animFrameId = requestAnimationFrame(tick);
   }
@@ -404,8 +434,8 @@ export function stopLoop(office: Office): void {
 
 // ─── Update ───────────────────────────────────────────────────────────────────
 
-function update(office: Office, dt: number): void {
-  office.elapsedTime += dt;
+function update(office: Office, dt: number, elapsed: number): void {
+  office.elapsedTime += elapsed;
 
   // PC animation
   office.pcFrameTimer += dt;
@@ -421,8 +451,8 @@ function update(office: Office, dt: number): void {
   const floorStartY = FLOOR_START_Y;
 
   for (const c of office.characters.values()) {
+    updateCharacterMovement(office, c, dt);
     updateCharacterAnimation(c, dt);
-    updateCharacterMovement(c, dt);
 
     // Only run idle behavior when character has no work
     if (c.activeTools.size === 0 && c.activity !== 'waiting') {
@@ -430,44 +460,60 @@ function update(office: Office, dt: number): void {
     }
 
     updateSeating(office, c, dt);
-    // A departing occupant reserves the seat until fully upright.
-    if (c.sitProgress === 0) {
-      for (const spot of office.leisureSpots) {
-        if (spot.occupant === c.id && c.idleGoal !== spot.type) spot.occupant = null;
-      }
+    if (c.sitProgress === 0 && office.leisureSpots.some((spot) => spot.occupant === c.id && spot.type !== c.idleGoal)) {
+      reduceCharacter(office, c, { type: 'seat-vacated' });
     }
-    if (c.speechBubble && Date.now() > c.speechBubble.expiresAt) c.speechBubble = undefined;
+    if (c.speechBubble && office.elapsedTime >= c.speechBubble.expiresAt) {
+      reduceCharacter(office, c, { type: 'bubble-expired', owner: c.speechBubble.owner });
+    }
   }
 }
 
 function updateCharacterAnimation(c: Character, dt: number): void {
+  const animateHands = c.sitProgress > 0 && (c.activity === 'typing' || c.activity === 'gaming');
+  if (!animateHands && (c.motion === 'stationary' || c.sitProgress > 0)) {
+    c.frame = 0;
+    c.frameTimer = 0;
+    return;
+  }
   c.frameTimer += dt;
-  const fps = c.activity === 'idle' ? 3 : 8;
+  const fps = 8;
   if (c.frameTimer >= 1000 / fps) {
     c.frameTimer = 0;
     c.frame = (c.frame + 1) % 4;
   }
 }
 
-function updateCharacterMovement(c: Character, dt: number): void {
+function updateCharacterMovement(office: Office, c: Character, dt: number): void {
   if (c.activity !== 'walking' || c.sitProgress > 0) return;
+  if (Math.hypot(c.targetX - c.x, c.targetY - c.y) < 0.5) {
+    c.route = [];
+    reduceCharacter(office, c, { type: 'arrived', generation: c.movementGeneration });
+    return;
+  }
+  if (targetClaimedByEarlier(office, c)) {
+    reduceCharacter(office, c, { type: 'route-unreachable', generation: c.movementGeneration });
+    return;
+  }
+  if (c.routeGeneration !== c.movementGeneration || c.routeLayoutRevision !== office.layoutRevision) {
+    c.route = routeToTarget(office, c);
+    c.routeGeneration = c.movementGeneration;
+    c.routeLayoutRevision = office.layoutRevision;
+  }
+  const waypoint = c.route[0];
+  if (!waypoint) {
+    reduceCharacter(office, c, { type: 'route-unreachable', generation: c.movementGeneration });
+    return;
+  }
   const speed = 55 * (dt / 1000);
-  const dx = c.targetX - c.x;
-  const dy = c.targetY - c.y;
+  const dx = waypoint.x - c.x;
+  const dy = waypoint.y - c.y;
   const dist = Math.sqrt(dx * dx + dy * dy);
   if (dist <= speed) {
-    c.x = c.targetX;
-    c.y = c.targetY;
-    // Arrived — resolve pending goal
-    if (c.idleGoal === 'desk' || c.idleGoal === null) {
-      c.activity = c.activeTools.size > 0
-        ? toolStatusToActivity([...c.activeTools.values()][0].status) : 'idle';
-      c.direction = 'down';
-    } else if (c.idleGoal) {
-      c.activity = goalToActivity(c.idleGoal);
-      c.direction = 'down';
-      c.speechBubble = { text: goalBubble(c.idleGoal), expiresAt: Date.now() + c.leisureTimer };
-    }
+    c.x = waypoint.x;
+    c.y = waypoint.y;
+    c.route.shift();
+    if (c.route.length === 0) reduceCharacter(office, c, { type: 'arrived', generation: c.movementGeneration });
   } else {
     c.x += (dx / dist) * speed;
     c.y += (dy / dist) * speed;
@@ -477,6 +523,75 @@ function updateCharacterMovement(c: Character, dt: number): void {
       ? (sx > 0 ? 'right' : 'left')
       : (sy > 0 ? 'down' : 'up');
   }
+}
+
+function targetClaimedByEarlier(office: Office, character: Character): boolean {
+  for (const other of office.characters.values()) {
+    if (other.id === character.id) break;
+    if (Math.hypot(other.targetX - character.targetX, other.targetY - character.targetY) < CHAR_MIN_SEPARATION) {
+      return true;
+    }
+  }
+  return false;
+}
+
+function routeToTarget(office: Office, character: Character): Array<{ x: number; y: number }> {
+  for (const other of office.characters.values()) {
+    if (other.id !== character.id && other.motion === 'stationary'
+      && Math.hypot(other.x - character.targetX, other.y - character.targetY) < CHAR_MIN_SEPARATION) return [];
+  }
+  const start = { col: Math.round(character.x / TILE), row: Math.round(character.y / TILE) };
+  const end = { col: Math.round(character.targetX / TILE), row: Math.round(character.targetY / TILE) };
+  const zones = furnitureZones(office);
+  const startZone = zones.find((zone) => insideZone(character.x, character.y, zone));
+  const isInteractionTarget = Math.hypot(character.targetX - character.deskX,
+    character.targetY - character.deskY - TILE) < 0.5
+    || office.leisureSpots.some((spot) => spot.standX === character.targetX && spot.standY === character.targetY);
+  const endZone = isInteractionTarget
+    ? zones.find((zone) => insideZone(character.targetX, character.targetY, zone)) : undefined;
+  const blocked = (col: number, row: number) => {
+    if (col < 1 || row < 2 || col > office.cols - 2 || row > office.rows - 2) return true;
+    return zones.some((zone) => insideZone(col * TILE, row * TILE, zone)
+      && !(zone === endZone && Math.abs(col - end.col) + Math.abs(row - end.row) <= 1)
+      && !(zone === startZone && Math.abs(col - start.col) + Math.abs(row - start.row) <= 1));
+  };
+  const result = findGridPath(office.cols, office.rows, start, end, blocked);
+  if (result.kind === 'unreachable') return [];
+  const route = result.points.map(({ col, row }) => ({ x: col * TILE, y: row * TILE }));
+  if (Math.hypot(character.x - start.col * TILE, character.y - start.row * TILE) > 0.5) {
+    route.unshift({ x: start.col * TILE, y: start.row * TILE });
+  }
+  if (route.length === 0 || Math.hypot(route.at(-1)!.x - character.targetX, route.at(-1)!.y - character.targetY) > 0.5) {
+    route.push({ x: character.targetX, y: character.targetY });
+  }
+  return route;
+}
+
+type FurnitureZone = { x: number; y: number; w: number; h: number };
+
+function insideZone(x: number, y: number, zone: FurnitureZone): boolean {
+  return x >= zone.x && x <= zone.x + zone.w && y >= zone.y && y <= zone.y + zone.h;
+}
+
+function nearestClearTile(office: Office, character: Character, zones: FurnitureZone[]): { x: number; y: number } | null {
+  let nearest: { x: number; y: number } | null = null;
+  let distance = Infinity;
+  for (let row = 2; row <= office.rows - 2; row++) {
+    for (let col = 1; col <= office.cols - 2; col++) {
+      const candidateX = col * TILE;
+      const candidateY = row * TILE;
+      if (zones.some((zone) => insideZone(candidateX, candidateY, zone))) continue;
+      if ([...office.characters.values()].some((other) => other.id !== character.id
+        && (Math.hypot(other.x - candidateX, other.y - candidateY) < CHAR_MIN_SEPARATION
+          || Math.hypot(other.targetX - candidateX, other.targetY - candidateY) < CHAR_MIN_SEPARATION))) continue;
+      const candidateDistance = Math.hypot(character.x - candidateX, character.y - candidateY);
+      if (candidateDistance < distance) {
+        nearest = { x: candidateX, y: candidateY };
+        distance = candidateDistance;
+      }
+    }
+  }
+  return nearest;
 }
 
 function updateIdleBehavior(
@@ -490,14 +605,11 @@ function updateIdleBehavior(
 
   // If doing leisure, count down leisure timer
   if (c.idleGoal && c.idleGoal !== 'desk' && c.activity !== 'walking') {
-    c.leisureTimer -= dt;
+    c.leisureExpiresAt ??= office.elapsedTime + c.leisureTimer;
+    c.leisureTimer = Math.max(0, c.leisureExpiresAt - office.elapsedTime);
     if (c.leisureTimer <= 0) {
       // Done — go back to desk
-      c.idleGoal = 'desk';
-      c.activity = 'walking';
-      c.targetX = c.deskX;
-      c.targetY = c.deskY + TILE;
-      c.speechBubble = undefined;
+      reduceCharacter(office, c, { type: 'leisure-expired' });
       c.idleTimer = IDLE_WANDER_MS * (0.5 + Math.random());
     }
     return;
@@ -517,9 +629,7 @@ function updateIdleBehavior(
       if (!tooCloseToOtherCharacters(office, wx, wy, c.id)) { found = true; break; }
     }
     if (found) {
-      c.targetX = wx;
-      c.targetY = wy;
-      c.activity = 'walking';
+      reduceCharacter(office, c, { type: 'wander-started', x: wx, y: wy });
     }
     return;
   }
@@ -528,15 +638,11 @@ function updateIdleBehavior(
   if (c.idleTimer <= 0 && c.activity === 'idle') {
     if (Math.random() < LEISURE_CHANCE && office.leisureSpots.length > 0) {
       // Pick an available leisure spot
-      const available = office.leisureSpots.filter((s) => s.occupant === null);
+      const available = office.leisureSpots.filter((s) => office.interactions.available(s.type));
       if (available.length > 0) {
         const spot = available[Math.floor(Math.random() * available.length)];
-        spot.occupant = c.id;
-        c.idleGoal = spot.type;
-        c.leisureTimer = LEISURE_MIN_MS + Math.random() * (LEISURE_MAX_MS - LEISURE_MIN_MS);
-        c.targetX = spot.standX;
-        c.targetY = spot.standY;
-        c.activity = 'walking';
+        const durationMs = LEISURE_MIN_MS + Math.random() * (LEISURE_MAX_MS - LEISURE_MIN_MS);
+        reduceCharacter(office, c, { type: 'leisure-started', spot, durationMs });
         return;
       }
     }
@@ -544,12 +650,6 @@ function updateIdleBehavior(
     c.idleTimer = IDLE_WANDER_MS * (0.5 + Math.random());
   }
 
-}
-
-function freeSpotsFor(office: Office, agentId: string): void {
-  for (const spot of office.leisureSpots) {
-    if (spot.occupant === agentId) spot.occupant = null;
-  }
 }
 
 // Checks candidate point against every other character's current (or, if walking, target)
@@ -567,12 +667,18 @@ function tooCloseToOtherCharacters(office: Office, x: number, y: number, exclude
 }
 
 function furnitureZones(office: Office): Array<{ x: number; y: number; w: number; h: number }> {
-  return office.leisureSpots.filter((spot) => spot.type !== 'coffee').map((spot) => ({
+  const zones = office.leisureSpots.filter((spot) => spot.type !== 'coffee').map((spot) => ({
     x: spot.itemX,
     y: spot.itemY - (spot.type === 'tv' ? 4 : 0),
     w: spot.type === 'tv' ? 65 : 54,
     h: spot.type === 'tv' ? 58 : 50,
   }));
+  for (let index = 0; index < Math.max(2, office.characters.size); index++) {
+    const desk = deskPosition(index);
+    zones.push({ x: desk.deskX - 17, y: desk.deskY - 6, w: 48, h: 27 });
+  }
+  zones.push({ x: (office.cols - 3) * TILE, y: 28, w: 24, h: 14 });
+  return zones;
 }
 
 function petInZone(px: number, py: number, zones: Array<{ x: number; y: number; w: number; h: number }>): boolean {
@@ -649,35 +755,4 @@ function updatePet(office: Office, dt: number): void {
 
 function clamp(value: number, min: number, max: number): number {
   return Math.max(min, Math.min(max, value));
-}
-
-function toolStatusToActivity(status: ToolStatus): CharacterActivity {
-  switch (status) {
-    case 'reading': return 'reading';
-    case 'writing': return 'typing';
-    case 'running': return 'running';
-    case 'searching': return 'searching';
-    default: return 'typing';
-  }
-}
-
-function goalToActivity(goal: LeisureType): CharacterActivity {
-  switch (goal) {
-    case 'gaming': return 'gaming';
-    case 'tv': return 'watching_tv';
-    case 'coffee': return 'coffee_break';
-  }
-}
-
-function goalBubble(goal: LeisureType): string {
-  switch (goal) {
-    case 'gaming': return 'GG EZ';
-    case 'tv': return '📺';
-    case 'coffee': return '☕ ahhh';
-  }
-}
-
-function shortToolName(name: string): string {
-  const n = name.replace(/([A-Z])/g, ' $1').trim();
-  return n.length > 11 ? n.slice(0, 10) + '…' : n;
 }

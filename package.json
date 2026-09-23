@@ -106,6 +106,7 @@
     "typecheck": "tsc --noEmit && npm --prefix webview-ui run typecheck",
     "build": "node esbuild.js",
     "build:webview": "cd webview-ui && npm run build",
+    "test:package": "node --test webview-ui/packagedAssets.test.mjs",
     "dev": "node esbuild.js --watch",
     "vscode:prepublish": "npm run build:webview && npm run build",
     "package": "npx @vscode/vsce package --no-dependencies",

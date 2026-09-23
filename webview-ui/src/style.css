@@ -33,6 +33,30 @@ body {
   height: 24px;
 }
 
+#status-bar[data-connection]::before {
+  content: '';
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #e8aa69;
+  margin-right: 7px;
+  vertical-align: middle;
+}
+#status-bar[data-connection='connected']::before { background: #74c9a0; }
+#status-bar[data-connection='disconnected']::before { background: #e67575; }
+
+#asset-warning:not([hidden]) {
+  padding: 5px 12px;
+  background: #342d28;
+  color: #f6c79a;
+  border-bottom: 1px solid #765844;
+  flex-shrink: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 /* ── Canvas wrapper — this is what flex grows, NOT the canvas itself */
 #canvas-wrap {
   flex: 1;

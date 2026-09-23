@@ -4,6 +4,7 @@
 **/__pycache__/**
 **/*.pyc
 webview-ui/**
+docs/plans/office-evolution-plan.md
 src/**
 *.ts
 **/*.map
